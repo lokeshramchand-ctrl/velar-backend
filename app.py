@@ -48,7 +48,7 @@ async def lifespan(app: FastAPI):
 
 # FastAPI App
 app = FastAPI(
-    title="Velar Transaction Intelligence API",
+    title="Velar",
     description="Core engine for raw transaction ingestion and ML routing.",
     version="1.0.0",
     lifespan=lifespan
