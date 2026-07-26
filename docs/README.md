@@ -33,6 +33,7 @@ The codebase is organized as a series of **numbered "Phases"** — this isn't a 
 | [17 · Senior Architect Review](./17-senior-architect-review.md) | Get a cross-cutting analysis of startup, DI, auth/authz, error handling, caching, bottlenecks, security, and scalability |
 | [Folder-by-Folder Reference](./folders/README.md) | Get a deep dive on one specific folder — purpose, classes, dependency/call graphs, interview questions, common mistakes, and blast radius if it disappeared |
 | [File-by-File Reference](./files/README.md) | Get a deep dive on one specific file — every import, every function explained in plain English, side effects, performance notes, and interview questions |
+| [Complete API Reference (per-endpoint)](./api/README.md) | Get the full contract for one specific endpoint — headers, validation, exact DB queries, execution flow diagram, examples, and interview questions |
 
 ## System snapshot
 
