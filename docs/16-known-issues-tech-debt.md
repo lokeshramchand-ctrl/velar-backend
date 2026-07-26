@@ -63,6 +63,10 @@ prev_total = 15000.0 # Replace with actual DB query
 ```
 `GET /v1/analytics/trends/mom` compares real current-month spend against a hardcoded ₹15,000 "previous month," not an actual queried value. Any consumer of this endpoint is looking at a fabricated comparison. See [11 · Analytics Engine §11.5](./11-analytics-engine.md#115-month-over-month-trend--analyticstrendspycalculate_mom_growth).
 
+### `feedback.prediction` field holds a category, not a merchant name
+**Files**: `feedback/feedback_service.py` (writer), `rag/retriever.py`, `graphs/graph_builder.py` (readers)
+`feedback/feedback_service.py::process_feedback` stores `"prediction": original_prediction` — confirmed by `test_api.py`'s own test data to hold `TransactionCategory`-shaped values like `"Unknown"` or `"Travel"`, not a merchant name. But `rag/retriever.py` queries `db.feedback.find({"prediction": name})` where `name` is a *merchant* name (e.g. `"Swiggy"`) from Milvus search results, and `graphs/graph_builder.py` does `merchant_prediction = f.get("prediction")` then checks `if merchant_prediction in self.graph` (a graph of merchant nodes) before wiring a `FEEDBACK_ON` edge. Since category strings essentially never coincide with merchant names, **both consumers silently receive almost no feedback data in practice**: `/v1/explain`'s `<HUMAN_CORRECTIONS>` context is starved even when directly relevant feedback exists, and nearly every `Feedback_*` node in the knowledge graph fails to attach to any merchant node. No exception is raised anywhere — this fails silently as an empty result, not an error. Fix: add a real `merchant_name` field to the `feedback` document at write time, and update both read sites to query on it instead of `prediction`. Full detail in [18 · Database Analysis §2.2](./18-database-analysis.md#22-the-feedbackprediction-field-mismatch--a-real-previously-undocumented-bug).
+
 ## 16.3 Medium (disconnected features, dead code, silent no-ops)
 
 ### Feedback router not mounted
@@ -149,4 +153,5 @@ Compose sets `MONGO_URI`/`MONGO_DB_NAME`/`MILVUS_HOST`/`MILVUS_PORT`; `Settings`
 6. Fix `clustering/cluster_engine.py`'s `davies_bouldin_index` → `davies_bouldin_score` import, and its subsequent `vector_store.behavior_collection` → `vector_store.client` attribute error.
 7. Decide whether to mount `feedback.router` in `app.py`, or remove it if the feature is intentionally on hold.
 8. Reconcile `docker-compose_production.yaml` env var names with `core/config.py`, and reconcile `README.md`'s local-dev instructions with the committed `docker-compose_local.yaml`.
-9. Everything else in §16.3/§16.4 as time and priority allow.
+9. Fix the `feedback.prediction` field mismatch (add a real `merchant_name` field; update `rag/retriever.py` and `graphs/graph_builder.py` to query on it).
+10. Everything else in §16.3/§16.4 as time and priority allow.
