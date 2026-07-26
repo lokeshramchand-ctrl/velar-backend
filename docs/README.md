@@ -30,6 +30,9 @@ The codebase is organized as a series of **numbered "Phases"** — this isn't a 
 | [14 · Deployment & Operations](./14-deployment-operations.md) | Build, configure, and run Velar locally or in production |
 | [15 · Testing](./15-testing.md) | Understand the automated test suite and manual E2E script |
 | [16 · Known Issues & Tech Debt](./16-known-issues-tech-debt.md) | Understand which parts of the system are broken, disconnected, or mocked |
+| [17 · Senior Architect Review](./17-senior-architect-review.md) | Get a cross-cutting analysis of startup, DI, auth/authz, error handling, caching, bottlenecks, security, and scalability |
+| [Folder-by-Folder Reference](./folders/README.md) | Get a deep dive on one specific folder — purpose, classes, dependency/call graphs, interview questions, common mistakes, and blast radius if it disappeared |
+| [File-by-File Reference](./files/README.md) | Get a deep dive on one specific file — every import, every function explained in plain English, side effects, performance notes, and interview questions |
 
 ## System snapshot
 

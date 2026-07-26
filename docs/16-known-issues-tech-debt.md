@@ -25,7 +25,7 @@ text_content = request.get("text", "")  # request is a CategorizeRequest (Pydant
 "category": categorize_transaction,      # the handler *function*, not a category string
 "confidence": confidence_engine,         # the engine *object*, not a confidence float
 ```
-`request.get(...)` raises `AttributeError` immediately (Pydantic v2 `BaseModel` has no `.get`). Even past that, the Mongo insert assigns module/function objects into document fields meant to hold resolved values — placeholder code left mid-edit (the comments `# CHANGE THIS to...` confirm this was never finished). This is the primary public ingestion endpoint and it cannot currently complete a request successfully. See [02 · API Reference §2.3](./02-api-reference.md#23-transaction-intelligence-routersv1py-prefix-v1).
+`request.get(...)` raises `AttributeError` immediately (Pydantic v2 `BaseModel` has no `.get`). Even past that, `"timestamp": datetime.now(time.timezone.utc)` is a third, independent bug on the same line group: `time.timezone` is a plain integer constant (UTC offset in seconds), not an object with a `.utc` attribute, so this raises a second `AttributeError` — the intended call was almost certainly `datetime.now(timezone.utc)` using the `timezone` class already imported from `datetime` in this file. Past that, the Mongo insert assigns module/function objects into document fields meant to hold resolved values — placeholder code left mid-edit (the comments `# CHANGE THIS to...` confirm this was never finished). This is the primary public ingestion endpoint and it cannot currently complete a request successfully. See [02 · API Reference §2.3](./02-api-reference.md#23-transaction-intelligence-routersv1py-prefix-v1).
 
 ### `davies_bouldin_index` does not exist in scikit-learn
 **File**: `clustering/cluster_engine.py`
@@ -33,6 +33,8 @@ text_content = request.get("text", "")  # request is a CategorizeRequest (Pydant
 from sklearn.metrics import silhouette_score, davies_bouldin_index
 ```
 The correct scikit-learn export is `davies_bouldin_score`. This `ImportError`s the moment `clustering/cluster_engine.py` is imported, making the entire Phase 8 clustering pipeline non-importable/non-runnable as committed. Fix: rename to `davies_bouldin_score` (and update the corresponding call site in `_calculate_metrics`). See [07 · Embeddings, Vector Search & Clustering §7.4](./07-embeddings-vectorsearch-clustering.md#74-phase-8-clustering-pipeline--clusteringpy).
+
+**Masked second bug in the same function**: even after fixing the import, `run_discovery_pipeline` calls `vector_store.behavior_collection.query(...)` — but `VectorStoreManager` (`milvus/insert_vectors.py`) has no `behavior_collection` attribute, only `self.client` and `self.behavior_col_name`. This would raise `AttributeError` immediately after the import fix. Both bugs must be fixed together for Phase 8 to run at all.
 
 ## 16.2 High (security / correctness with real user impact)
 
@@ -144,7 +146,7 @@ Compose sets `MONGO_URI`/`MONGO_DB_NAME`/`MILVUS_HOST`/`MILVUS_PORT`; `Settings`
 3. Rotate the credential in `docker-compose_production.yaml` and stop committing secrets inline.
 4. Fix `core/security.py` to read `settings.VELAR_API_KEY` instead of the hardcoded literal.
 5. Fix `routers/v1.py::categorize_transaction` (the `.get()` call and the placeholder field assignments).
-6. Fix `clustering/cluster_engine.py`'s `davies_bouldin_index` → `davies_bouldin_score` import.
+6. Fix `clustering/cluster_engine.py`'s `davies_bouldin_index` → `davies_bouldin_score` import, and its subsequent `vector_store.behavior_collection` → `vector_store.client` attribute error.
 7. Decide whether to mount `feedback.router` in `app.py`, or remove it if the feature is intentionally on hold.
 8. Reconcile `docker-compose_production.yaml` env var names with `core/config.py`, and reconcile `README.md`'s local-dev instructions with the committed `docker-compose_local.yaml`.
 9. Everything else in §16.3/§16.4 as time and priority allow.

@@ -52,6 +52,13 @@ from sklearn.metrics import silhouette_score, davies_bouldin_index
 ```
 Scikit-learn's actual function is named **`davies_bouldin_score`**, not `davies_bouldin_index` — no such name exists in `sklearn.metrics`. This import will raise `ImportError` the moment `clustering/cluster_engine.py` is loaded, which means `cluster_engine` (and therefore the entire Phase 8 discovery pipeline) **cannot currently be imported or run**. See [Known Issues](./16-known-issues-tech-debt.md#davies-bouldin-import-error). Since nothing in the live HTTP surface imports `clustering.cluster_engine` today (it's only reachable by direct script/REPL invocation per [01 · Architecture §1.9](./01-architecture.md#19-what-is-not-wired-into-the-http-surface)), this does not currently break `app.py` startup — but it does mean Phase 8 is non-functional as committed.
 
+### Second bug, currently masked by the import error: nonexistent `behavior_collection` attribute
+`run_discovery_pipeline` fetches vectors via:
+```python
+results = vector_store.behavior_collection.query(expr="id != ''", output_fields=["merchant_name", "embedding"])
+```
+But `VectorStoreManager` (`milvus/insert_vectors.py`) never defines a `behavior_collection` attribute — it exposes `self.client` (the `MilvusClient`) and `self.behavior_col_name` (a plain string). This line would raise `AttributeError: 'VectorStoreManager' object has no attribute 'behavior_collection'` the moment it executed. Fixing only the `davies_bouldin_index` import would surface this as the very next failure — both need correcting together (the call should be something like `vector_store.client.query(collection_name=vector_store.behavior_col_name, expr="id != ''", output_fields=[...])`).
+
 ## 7.5 Why this matters for RAG and analytics
 
 The vector-search **query** path (§7.3, used by `/v1/explain`) depends entirely on the `behavior_vectors` Milvus collection already being populated — but as shown above, the **write** path (embedding generation → `vectorizer` → `insert_behavior_vector`) has no orchestrating caller anywhere in the codebase. In a freshly deployed environment with no manual data-loading step, `/v1/explain` will always retrieve zero hits and short-circuit to `"NO_CONTEXT_AVAILABLE"` (see [10 · RAG & Explainability](./10-rag-explainability.md)).
