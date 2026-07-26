@@ -32,6 +32,7 @@ The codebase is organized as a series of **numbered "Phases"** — this isn't a 
 | [16 · Known Issues & Tech Debt](./16-known-issues-tech-debt.md) | Understand which parts of the system are broken, disconnected, or mocked |
 | [17 · Senior Architect Review](./17-senior-architect-review.md) | Get a cross-cutting analysis of startup, DI, auth/authz, error handling, caching, bottlenecks, security, and scalability |
 | [18 · Database Analysis](./18-database-analysis.md) | Understand schema, ER diagrams, relationships, indexes, constraints, normalization, transactions, and scalability across MongoDB and Milvus |
+| [19 · System Design Interview Walkthrough](./19-system-design-walkthrough.md) | Walk the full request lifecycle end-to-end (auth → API → controller → service → database → response) with sequence diagrams, as you would in a system design interview |
 | [Folder-by-Folder Reference](./folders/README.md) | Get a deep dive on one specific folder — purpose, classes, dependency/call graphs, interview questions, common mistakes, and blast radius if it disappeared |
 | [File-by-File Reference](./files/README.md) | Get a deep dive on one specific file — every import, every function explained in plain English, side effects, performance notes, and interview questions |
 | [Complete API Reference (per-endpoint)](./api/README.md) | Get the full contract for one specific endpoint — headers, validation, exact DB queries, execution flow diagram, examples, and interview questions |
