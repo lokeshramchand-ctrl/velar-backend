@@ -1,6 +1,8 @@
 <div align="center">
 
-# ⚡ Velar
+![Profile Picture](/assets/banner.png)
+
+# Velar
 
 **Transaction Intelligence Engine — turning noisy financial text into explainable, structured insight.**
 
@@ -19,7 +21,7 @@ Velar ingests raw, messy transaction strings (UPI references, bank SMS, POS narr
 
 ---
 
-## 📌 Project Status
+## Project Status
 
 > **Pre-production / actively stabilizing.** Velar's architecture is genuinely ambitious — a 15-phase pipeline from ingestion through explainability — but several phases are disconnected from the live API surface, and a small number of endpoints have known, tracked defects. This README describes the project honestly: what works today, what's mocked, and what's planned. See [`docs/16-known-issues-tech-debt.md`](./docs/16-known-issues-tech-debt.md) for the complete, current defect list before deploying this anywhere important.
 
@@ -27,29 +29,29 @@ Velar ingests raw, messy transaction strings (UPI references, bank SMS, POS narr
 
 ## Table of Contents
 
-- [Overview](#-overview)
-- [Architecture](#-architecture)
-- [Features](#-features)
-- [Tech Stack](#-tech-stack)
-- [Folder Structure](#-folder-structure)
-- [Getting Started](#-getting-started)
+- [Overview](#overview)
+- [Architecture](#architecture)
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Folder Structure](#folder-structure)
+- [Getting Started](#getting-started)
   - [Prerequisites](#prerequisites)
   - [Installation](#installation)
   - [Environment Variables](#environment-variables)
   - [Running Locally](#running-locally)
-- [Development Workflow](#-development-workflow)
-- [Testing](#-testing)
-- [Deployment](#-deployment)
-- [API Overview](#-api-overview)
-- [Screenshots / API Preview](#-screenshots--api-preview)
-- [Known Limitations](#-known-limitations)
-- [Roadmap](#-roadmap)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [Development Workflow](#development-workflow)
+- [Testing](#testing)
+- [Deployment](#deployment)
+- [API Overview](#api-overview)
+- [Screenshots / API Preview](#screenshots--api-preview)
+- [Known Limitations](#known-limitations)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
-## 🔭 Overview
+## Overview
 
 Most transaction-categorization systems either rely on brittle string matching or hand the whole problem to a single opaque LLM call. Velar takes a different approach: a layered pipeline where each stage has a single, well-defined responsibility —
 
@@ -60,7 +62,7 @@ Most transaction-categorization systems either rely on brittle string matching o
 
 Velar is built as a single async FastAPI service backed by MongoDB (system of record) and Milvus (semantic vector search), with Ollama providing local/self-hosted embeddings and generation.
 
-## 🏗 Architecture
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -82,40 +84,40 @@ Velar's own code comments describe the system as a sequence of numbered **phases
 
 | Phase | Capability | Status |
 |---|---|---|
-| 1–3 | Rule-based categorization + noisy-text merchant resolution | ✅ Resolution works · 🐛 Categorize has a known bug |
-| 4 | Memory / trust state machine (`EPHEMERAL → TEMPORARY → PERMANENT`) | ✅ Working |
-| 5 | Confidence wall (reject low-confidence predictions) | ✅ Working |
-| 6 | Behavioral feature extraction (amount, timing, frequency, periodicity) | ⚙️ Implemented, not auto-triggered |
-| 7 | Embeddings + Milvus vector search | ⚙️ Search path live; write/index path not wired up |
-| 8 | UMAP + HDBSCAN clustering | 🐛 Two known bugs, currently non-functional |
-| 9 | Baseline ML model benchmarking | 🧪 Script-only, synthetic data |
-| 10 | Human feedback + active learning queue | 🐛 Implemented, but not mounted to the API |
-| 11 | LoRA fine-tuning (FinBERT) | 🧪 Script-only, synthetic data |
-| 12 | Grounded RAG explainability | ✅ Working end-to-end |
-| 13 | Spend analytics (patterns, subscriptions, trends, anomalies) | ✅ Working |
-| 14 | Observability / drift monitoring | 🧪 Stubbed, not implemented |
-| 15 | API key authentication + rate limiting | ✅ Working (single shared key model) |
+| 1–3 | Rule-based categorization + noisy-text merchant resolution | Resolution works; categorize has a known bug |
+| 4 | Memory / trust state machine (`EPHEMERAL → TEMPORARY → PERMANENT`) | Working |
+| 5 | Confidence wall (reject low-confidence predictions) | Working |
+| 6 | Behavioral feature extraction (amount, timing, frequency, periodicity) | Implemented, not auto-triggered |
+| 7 | Embeddings + Milvus vector search | Search path live; write/index path not wired up |
+| 8 | UMAP + HDBSCAN clustering | Two known bugs, currently non-functional |
+| 9 | Baseline ML model benchmarking | Script-only, synthetic data |
+| 10 | Human feedback + active learning queue | Implemented, but not mounted to the API |
+| 11 | LoRA fine-tuning (FinBERT) | Script-only, synthetic data |
+| 12 | Grounded RAG explainability | Working end-to-end |
+| 13 | Spend analytics (patterns, subscriptions, trends, anomalies) | Working |
+| 14 | Observability / drift monitoring | Stubbed, not implemented |
+| 15 | API key authentication + rate limiting | Working (single shared key model) |
 
 **Full architecture deep-dive, sequence diagrams, and per-folder/per-file references live in [`/docs`](./docs/README.md).**
 
-## ✨ Features
+## Features
 
 | Feature | Endpoint(s) | Status |
 |---|---|---|
-| Deterministic merchant/category rule matching | `POST /v1/categorize` | 🐛 Known bug — see [Known Limitations](#-known-limitations) |
-| Noisy UPI/bank text → canonical merchant resolution | `POST /v1/resolve` | ✅ Stable |
-| Confidence-wall prediction gating | `POST /v1/confidence/evaluate` | ✅ Stable |
-| Merchant trust/memory state tracking | `POST /memory/update`, `GET /memory/profile/{name}`, `GET /memory/state/{name}` | ✅ Stable |
-| Spend breakdown by category & top merchants | `GET /v1/analytics/patterns/*` | ✅ Stable |
-| Subscription detection | `GET /v1/analytics/subscriptions` | ⚙️ Needs behavioral backfill |
-| Real-time anomaly detection (z-score) | `POST /v1/analytics/anomaly/check` | ⚙️ Needs behavioral backfill |
-| Month-over-month trend | `GET /v1/analytics/trends/mom` | 🧪 Partially mocked |
-| Grounded, hallucination-resistant explanations | `POST /v1/explain` | ✅ Stable |
-| Health check & Prometheus metrics | `GET /health`, `GET /metrics` | ✅ Stable |
+| Deterministic merchant/category rule matching | `POST /v1/categorize` | Known bug — see [Known Limitations](#known-limitations) |
+| Noisy UPI/bank text → canonical merchant resolution | `POST /v1/resolve` | Stable |
+| Confidence-wall prediction gating | `POST /v1/confidence/evaluate` | Stable |
+| Merchant trust/memory state tracking | `POST /memory/update`, `GET /memory/profile/{name}`, `GET /memory/state/{name}` | Stable |
+| Spend breakdown by category & top merchants | `GET /v1/analytics/patterns/*` | Stable |
+| Subscription detection | `GET /v1/analytics/subscriptions` | Needs behavioral backfill |
+| Real-time anomaly detection (z-score) | `POST /v1/analytics/anomaly/check` | Needs behavioral backfill |
+| Month-over-month trend | `GET /v1/analytics/trends/mom` | Partially mocked |
+| Grounded, hallucination-resistant explanations | `POST /v1/explain` | Stable |
+| Health check & Prometheus metrics | `GET /health`, `GET /metrics` | Stable |
 
-Legend: ✅ Stable and correct · ⚙️ Works, but depends on a manual backfill step · 🧪 Experimental / mocked · 🐛 Known defect (tracked)
+Legend: **Stable** — working correctly and verified · **Needs backfill** — works, but depends on a manual step · **Partially mocked / Script-only** — experimental or not yet connected to real data · **Known bug** — tracked defect (see Known Limitations)
 
-## 🧰 Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
@@ -133,7 +135,7 @@ Legend: ✅ Stable and correct · ⚙️ Works, but depends on a manual backfill
 | Containerization | Docker, Docker Compose |
 | Testing | pytest, FastAPI `TestClient` |
 
-## 📁 Folder Structure
+## Folder Structure
 
 ```
 backend/
@@ -166,9 +168,9 @@ backend/
 └── docker-compose_production.yaml
 ```
 
-📖 **For a deep dive into any single folder or file** — purpose, classes, dependency graphs, interview questions, and what breaks if it's removed — see [`docs/folders/`](./docs/folders/README.md) and [`docs/files/`](./docs/files/README.md).
+**For a deep dive into any single folder or file** — purpose, classes, dependency graphs, interview questions, and what breaks if it's removed — see [`docs/folders/`](./docs/folders/README.md) and [`docs/files/`](./docs/files/README.md).
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
@@ -178,7 +180,7 @@ backend/
 - A running **Milvus** instance ([standalone Docker image](https://milvus.io/docs/install_standalone-docker.md) is sufficient for local dev)
 - A reachable **Ollama** server with an embedding model and a generation model pulled
 
-> ⚠️ The committed `docker-compose_local.yaml` only provisions MongoDB — you'll need to run Milvus and Ollama separately (or add them to your own compose override) for the full feature set to work locally.
+> **Note:** The committed `docker-compose_local.yaml` only provisions MongoDB — you'll need to run Milvus and Ollama separately (or add them to your own compose override) for the full feature set to work locally.
 
 ### Installation
 
@@ -190,7 +192,7 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 ```
 
-> ⚠️ **Do not rely on `pip install -r requirements.txt` alone.** The committed `requirements.txt` does not list this project's actual runtime dependencies (see [Known Limitations](#-known-limitations)). Until it's corrected, install the real dependency set manually:
+> **Important: do not rely on `pip install -r requirements.txt` alone.** The committed `requirements.txt` does not list this project's actual runtime dependencies (see [Known Limitations](#known-limitations)). Until it's corrected, install the real dependency set manually:
 
 ```bash
 pip install fastapi uvicorn "pydantic-settings" motor pymilvus slowapi \
@@ -226,14 +228,14 @@ VELAR_API_KEY=your-secret-key-here
 
 | Variable | Required | Default | Notes |
 |---|---|---|---|
-| `MONGODB_URI` | ✅ | — | Full MongoDB connection string |
-| `MONGODB_DB_NAME` | ❌ | `velar` | |
-| `MILVUS_URI` | ✅ | — | |
-| `OLLAMA_URI` | ❌ | — | Takes precedence over `OLLAMA_HOSTS` if both are set |
-| `OLLAMA_HOSTS` | ❌ | — | Comma-separated failover list, tried in order at startup |
-| `EMBED_MODEL` | ✅ | — | Ollama embedding model name |
-| `LLM_MODEL` | ✅ | — | Ollama generation model name |
-| `VELAR_API_KEY` | ✅ | — | ⚠️ Currently **not actually enforced** by the running app — see [Known Limitations](#-known-limitations) |
+| `MONGODB_URI` | Yes | — | Full MongoDB connection string |
+| `MONGODB_DB_NAME` | No | `velar` | |
+| `MILVUS_URI` | Yes | — | |
+| `OLLAMA_URI` | No | — | Takes precedence over `OLLAMA_HOSTS` if both are set |
+| `OLLAMA_HOSTS` | No | — | Comma-separated failover list, tried in order at startup |
+| `EMBED_MODEL` | Yes | — | Ollama embedding model name |
+| `LLM_MODEL` | Yes | — | Ollama generation model name |
+| `VELAR_API_KEY` | Yes | — | Currently **not actually enforced** by the running app — see [Known Limitations](#known-limitations) |
 
 The app **fails fast at startup** if any required variable is missing — this is deliberate, not a bug.
 
@@ -260,19 +262,19 @@ curl http://localhost:8000/health
 
 **Explore the interactive API docs** (auto-generated by FastAPI) at **http://localhost:8000/docs**.
 
-## 🔄 Development Workflow
+## Development Workflow
 
 This repository doesn't currently ship a linter config, formatter config, or CI pipeline — the recommendations below are conventional best practice for a project at this stage, not enforced tooling:
 
 1. **Branch from `main`** — `git checkout -b feature/your-change`.
 2. **Make focused commits** — one logical change per commit, with a message describing *why*, not just *what*.
-3. **Run the test suite** before opening a PR (see [Testing](#-testing)) — note the suite currently requires live MongoDB and Milvus connections.
+3. **Run the test suite** before opening a PR (see [Testing](#testing)) — note the suite currently requires live MongoDB and Milvus connections.
 4. **Cross-check `docs/16-known-issues-tech-debt.md`** before touching a file — several modules have documented, non-obvious defects; fixing one is a great first contribution.
 5. **Open a pull request** against `main` with a clear description of the change and its motivation.
 
-Consider adding `ruff`/`black` + a pre-commit hook and a CI workflow (`.github/workflows/`) as immediate, high-value process improvements — see [Roadmap](#-roadmap).
+Consider adding `ruff`/`black` + a pre-commit hook and a CI workflow (`.github/workflows/`) as immediate, high-value process improvements — see [Roadmap](#roadmap).
 
-## 🧪 Testing
+## Testing
 
 ```bash
 # Full suite (requires live MongoDB + Milvus)
@@ -284,7 +286,7 @@ bash scripts/test_pipeline.sh
 
 The `pytest` suite uses FastAPI's `TestClient` against the real app object, so it genuinely exercises the app's `lifespan` (real database connections) rather than mocking them — see [`docs/15-testing.md`](./docs/15-testing.md) for a full breakdown of what each test covers and its current pass/fail status.
 
-## 📦 Deployment
+## Deployment
 
 **Build and run with Docker:**
 ```bash
@@ -297,9 +299,9 @@ docker run -p 8000:8000 --env-file .env velar-backend
 docker compose -f docker-compose_production.yaml up -d --build
 ```
 
-> ⚠️ Before deploying anywhere beyond local development, read [`docs/14-deployment-operations.md`](./docs/14-deployment-operations.md) in full — it documents several real gaps (the `requirements.txt` issue above, an env-var naming mismatch in the production compose file, and a credential-hygiene issue) that matter for a real deployment.
+> **Important:** before deploying anywhere beyond local development, read [`docs/14-deployment-operations.md`](./docs/14-deployment-operations.md) in full — it documents several real gaps (the `requirements.txt` issue above, an env-var naming mismatch in the production compose file, and a credential-hygiene issue) that matter for a real deployment.
 
-## 📚 API Overview
+## API Overview
 
 All endpoints except `/health` and `/metrics` require the header `X-Velar-API-Key`.
 
@@ -324,7 +326,7 @@ All endpoints except `/health` and `/metrics` require the header `X-Velar-API-Ke
 
 **Full per-endpoint documentation** — headers, validation rules, exact database queries, sequence diagrams, and example requests/responses — lives in [`docs/api/`](./docs/api/README.md).
 
-## 🖼 Screenshots / API Preview
+## Screenshots / API Preview
 
 Velar is a headless JSON API with no bundled frontend, so there's no UI to screenshot. The closest equivalent:
 
@@ -351,7 +353,7 @@ $ curl -s -X POST http://localhost:8000/v1/resolve \
 }
 ```
 
-## ⚠️ Known Limitations
+## Known Limitations
 
 Velar is transparent about its own maturity. The full, continuously-maintained list — with file/line-level detail and suggested fixes — lives in [`docs/16-known-issues-tech-debt.md`](./docs/16-known-issues-tech-debt.md). Headlines:
 
@@ -361,7 +363,7 @@ Velar is transparent about its own maturity. The full, continuously-maintained l
 - **Several pipeline phases are implemented but not wired to a scheduler or the live API**, including behavior profiling, clustering, decay sweeps, and the feedback/active-learning loop — meaning subscription/anomaly detection needs a manual backfill step, and `POST /v1/feedback/` isn't reachable yet.
 - **No caching layer and no database indexes exist yet** — fine for development, a real constraint before any production load.
 
-## 🗺 Roadmap
+## Roadmap
 
 - [ ] Fix `POST /v1/categorize` and correct `requirements.txt`
 - [ ] Wire real authentication (`VELAR_API_KEY`) and add per-caller authorization
@@ -374,7 +376,7 @@ Velar is transparent about its own maturity. The full, continuously-maintained l
 - [ ] Introduce a caching layer for repeated embedding/analytics queries
 - [ ] Real multi-tenancy: per-user data scoping instead of a hardcoded test user
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome. Since this project doesn't yet have a formal `CONTRIBUTING.md` or CI gate:
 
@@ -384,9 +386,9 @@ Contributions are welcome. Since this project doesn't yet have a formal `CONTRIB
 4. Open a pull request with a clear description of the problem and the fix.
 5. Be explicit in your PR description about what you tested and how, given the current lack of CI.
 
-## 📄 License
+## License
 
-**No license file is currently present in this repository.** Until one is added, all rights are reserved by default under standard copyright law — this code should not be assumed to be open-source-licensed for reuse, modification, or redistribution. If open-source distribution is intended, adding a `LICENSE` file (e.g., MIT, Apache 2.0) is a recommended near-term action — see [Roadmap](#-roadmap).
+**No license file is currently present in this repository.** Until one is added, all rights are reserved by default under standard copyright law — this code should not be assumed to be open-source-licensed for reuse, modification, or redistribution. If open-source distribution is intended, adding a `LICENSE` file (e.g., MIT, Apache 2.0) is a recommended near-term action — see [Roadmap](#roadmap).
 
 ---
 
