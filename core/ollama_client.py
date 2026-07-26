@@ -1,17 +1,19 @@
 import httpx
 import logging
+from core.config import settings
 
 logger = logging.getLogger(__name__)
 
-OLLAMA_HOSTS = [
-    #"http://10.10.10.100:11434",
-    #"https://ollama.splsystems.in",
-    "http://localhost:11434"
-]
 
 def resolve_ollama_host(hosts: list[str]) -> str:
-    """Iterates through provided hosts and returns the first healthy one."""
-    # Use a synchronous client just for the initial boot-up check
+    """
+    Iterates through provided hosts and returns the first healthy one.
+    All hosts come from settings.OLLAMA_HOSTS.
+    """
+    if not hosts:
+        logger.error("No OLLAMA_HOSTS provided in .env")
+        raise RuntimeError("OLLAMA_HOSTS is empty. Cannot resolve Ollama host.")
+
     with httpx.Client(timeout=2.0) as client:
         for host in hosts:
             try:
@@ -19,14 +21,21 @@ def resolve_ollama_host(hosts: list[str]) -> str:
                 if response.status_code == 200:
                     logger.info(f"Resolved Ollama host: {host}")
                     return host
-            except httpx.RequestError:
-                logger.warning(f"Ollama host unreachable: {host}")
-                continue
-                
-    logger.error("No Ollama hosts available. Pipeline will fail on embedding generation.")
-    return "https://ollama.splsystems.in"  # Final desperate fallback
+                else:
+                    logger.warning(f"Ollama host responded with {response.status_code}: {host}")
+            except httpx.RequestError as e:
+                logger.warning(f"Ollama host unreachable: {host} | Error: {e}")
 
-# Initialize constants
-OLLAMA_HOST = resolve_ollama_host(OLLAMA_HOSTS)
-EMBED_MODEL = "nomic-embed-text-v2-moe:latest"
-LLM_MODEL   = "gemma4:latest"
+    logger.error("No Ollama hosts available. All hosts failed health check.")
+    raise RuntimeError("All OLLAMA_HOSTS failed. Cannot initialize Ollama.")
+
+
+# Initialize constants from settings
+OLLAMA_HOST = (
+    settings.OLLAMA_URI
+    if settings.OLLAMA_URI
+    else resolve_ollama_host(settings.ollama_hosts_list)
+)
+
+EMBED_MODEL = settings.EMBED_MODEL
+LLM_MODEL = settings.LLM_MODEL
