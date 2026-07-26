@@ -1,4 +1,7 @@
-from fastapi import APIRouter
+from datetime import datetime
+import re
+import re
+from fastapi import APIRouter, requests
 from pydantic import BaseModel
 from models.schemas import CategorizeRequest, CategorizeResponse , ResolutionResult
 from engines.rule_engine import rule_engine
@@ -6,6 +9,8 @@ from engines.confidence_engine import confidence_engine
 from models.schemas import ConfidenceEvaluation
 import time
 from services.merchant_resolver import merchant_resolver
+from database.mongo import db
+
 router = APIRouter(prefix="/v1", tags=["Transaction Intelligence"])
 
 @router.post("/categorize", response_model=CategorizeResponse)
@@ -18,7 +23,23 @@ async def categorize_transaction(request: CategorizeRequest):
     
     process_time = time.time() - start_time
     # TODO: Log process_time to Prometheus for Latency metrics
-    
+    amount = 0.0
+    text_content = request.get("text", "") # Adjust if using a Pydantic model like payload.text
+    amount_match = re.search(r'₹\s*([0-9.,]+)', text_content)
+    if amount_match:
+        amount = float(amount_match.group(1).replace(',', ''))
+        
+    # 2. Save the fully enriched transaction to MongoDB
+    await db.transactions.insert_one({
+        "user_id": "user_123", # Hardcoded for now so it perfectly matches your Analytics mock user
+        "raw_text": text_content,
+        "merchant": merchant_resolver,  # CHANGE THIS to whatever variable holds your resolved merchant name
+        "category": categorize_transaction, # CHANGE THIS to whatever variable holds your final predicted category
+        "amount": amount,
+        "confidence": confidence_engine, # CHANGE THIS to your confidence variable
+        "timestamp": datetime.now(time.timezone.utc)
+    })
+
     return result
 
 class ResolveRequest(BaseModel):
