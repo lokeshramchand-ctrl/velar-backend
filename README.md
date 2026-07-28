@@ -2,7 +2,6 @@
 
 ![Profile Picture](/assets/banner.png)
 
-# Velar
 
 **Transaction Intelligence Engine — turning noisy financial text into explainable, structured insight.**
 
