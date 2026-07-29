@@ -1,6 +1,7 @@
-import umap
-import numpy as np
 import logging
+
+import numpy as np
+import umap
 
 logger = logging.getLogger(__name__)
 

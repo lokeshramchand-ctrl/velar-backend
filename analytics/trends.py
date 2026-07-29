@@ -1,9 +1,11 @@
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any
+
 from database.mongo import db
 
+
 class TrendAnalyzer:
-    async def calculate_mom_growth(self, user_id: str, current_month: int, current_year: int) -> Dict[str, Any]:
+    async def calculate_mom_growth(self, user_id: str, current_month: int, current_year: int) -> dict[str, Any]:
         """Calculates Month-over-Month (MoM) spending velocity."""
         curr_start = datetime(current_year, current_month, 1)
         if current_month == 12:

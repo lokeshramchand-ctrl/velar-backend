@@ -1,15 +1,17 @@
 import logging
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
-from database.mongo import db
-from models.schemas import BehaviorPattern
+from fastapi import APIRouter, HTTPException, Path, Request
+from pydantic import BaseModel, Field
+
 from behaviour.behavior_engine import behavior_engine
-from memory.decay_engine import decay_engine
-from graphs.graph_builder import graph_engine
-from embeddings.vectorizer import vectorizer
+from core.rate_limiter import limiter
+from database.mongo import db
 from embeddings.generate_embeddings import embedding_generator
+from embeddings.vectorizer import vectorizer
+from graphs.graph_builder import graph_engine
+from memory.decay_engine import decay_engine
 from milvus.insert_vectors import vector_store
+from models.schemas import BehaviorPattern
 
 logger = logging.getLogger(__name__)
 
@@ -17,24 +19,28 @@ router = APIRouter(prefix="/v1/pipelines", tags=["Batch Pipelines"])
 
 
 class MerchantRequest(BaseModel):
-    merchant_name: str
+    merchant_name: str = Field(..., min_length=1, max_length=200)
 
 
 @router.post("/behavior/run")
-async def run_behavior_profiling(request: MerchantRequest):
+@limiter.limit("30/minute")
+async def run_behavior_profiling(request: Request, payload: MerchantRequest):
     """Profiles a single merchant's behavioral signature (Phase 6). Writes to `behavior_patterns`."""
     try:
-        return await behavior_engine.profile_merchant_behavior(request.merchant_name)
+        return await behavior_engine.profile_merchant_behavior(payload.merchant_name)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.post("/behavior/run-all")
-async def run_behavior_profiling_all():
+@limiter.limit("10/minute")
+async def run_behavior_profiling_all(request: Request):
     """
     Profiles every distinct merchant seen in `transactions`. This is the batch entry
     point that keeps `behavior_patterns` populated for /v1/analytics/subscriptions
     and /v1/analytics/anomaly/check, since nothing else calls the behavior engine.
+    Rate-limited tighter than default: this is an O(all merchants) batch job, not
+    a per-request operation, and shouldn't be triggerable at high frequency.
     """
     merchant_names = await db.transactions.distinct("merchant")
     profiled, failed = [], []
@@ -51,11 +57,14 @@ async def run_behavior_profiling_all():
 
 
 @router.post("/embeddings/sync")
-async def sync_embeddings():
+@limiter.limit("10/minute")
+async def sync_embeddings(request: Request):
     """
     Generates and stores Milvus embeddings for every persisted behavior pattern
     (Phase 7). This is the missing link between `behavior_patterns` and the
     vector search used by /v1/explain and the clustering pipeline.
+    Rate-limited: this is an O(all behavior patterns) batch job making one
+    Ollama embedding call per document, not a per-request operation.
     """
     if vector_store.client is None:
         raise HTTPException(status_code=503, detail="Milvus is not connected.")
@@ -82,30 +91,39 @@ async def sync_embeddings():
 
 
 @router.post("/decay/sweep")
-async def run_decay_sweep():
+@limiter.limit("10/minute")
+async def run_decay_sweep(request: Request):
     """Archives merchant profiles inactive for 180+ days (Phase 4)."""
     archived_count = await decay_engine.run_archive_sweep()
     return {"archived_count": archived_count}
 
 
 @router.post("/graph/build")
-async def build_knowledge_graph():
+@limiter.limit("10/minute")
+async def build_knowledge_graph(request: Request):
     """Rebuilds the in-memory merchant knowledge graph from MongoDB (Phase 13)."""
     return await graph_engine.build_graph()
 
 
 @router.get("/graph/neighborhood/{merchant_name}")
-async def get_graph_neighborhood(merchant_name: str, radius: int = 2):
+async def get_graph_neighborhood(
+    merchant_name: str = Path(..., min_length=1, max_length=200),
+    radius: int = 2,
+):
     """Returns the local ego-graph around a merchant. Call /graph/build first in this process."""
+    radius = max(0, min(radius, 5))
     return graph_engine.get_merchant_neighborhood(merchant_name, radius=radius)
 
 
 @router.post("/clustering/run")
-async def run_clustering():
+@limiter.limit("5/minute")
+async def run_clustering(request: Request):
     """
     Runs the UMAP + HDBSCAN discovery pipeline over stored Milvus vectors (Phase 8).
     Imported lazily so a missing/broken scikit-learn or umap-learn install only
     breaks this one endpoint instead of preventing the whole app from starting.
+    Rate-limited tightest of the batch endpoints: this is the most CPU-intensive
+    job in the app (UMAP dimensionality reduction + HDBSCAN clustering).
     """
     from clustering.cluster_engine import cluster_engine
     return await cluster_engine.run_discovery_pipeline()

@@ -1,10 +1,11 @@
-from typing import List, Dict, Any
+from typing import Any
+
 
 class ContextBuilder:
     @staticmethod
-    def build_prompt_string(context_data: List[Dict[str, Any]]) -> str:
+    def build_prompt_string(context_data: list[dict[str, Any]]) -> str:
         """
-        Transforms raw database payloads into a strictly formatted string 
+        Transforms raw database payloads into a strictly formatted string
         to prevent the LLM from hallucinating outside the bounds of the data.
         """
         if not context_data:

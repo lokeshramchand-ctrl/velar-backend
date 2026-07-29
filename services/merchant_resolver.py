@@ -1,6 +1,6 @@
-import re
 import logging
-from typing import Optional
+import re
+
 from database.mongo import db
 from models.schemas import ResolutionResult
 
@@ -19,7 +19,7 @@ class MerchantResolver:
             r"\b(?:@icici|@okaxis|@okhdfcbank|@ybl|@sbi|@paytm)\b" # UPI handles
         ]
         self.noise_regex = re.compile("|".join(self.noise_patterns), re.IGNORECASE)
-        
+
         # Strip special characters except spaces and alphanumeric
         self.special_chars_regex = re.compile(r"[^a-zA-Z0-9\s]")
 
@@ -38,14 +38,14 @@ class MerchantResolver:
         Attempts to resolve a raw transaction string to a canonical merchant.
         """
         cleaned_text = self.clean_text(raw_text)
-        
+
         # Step 1: Database Lookup - Exact Alias Match
         # Assuming your MongoDB `merchants` collection has an `aliases` array field
         # e.g., { "canonical_name": "Swiggy", "aliases": ["BUNDL TECHNOLOGIES", "SWIGGY"] }
         exact_match = await db.merchants.find_one({
             "aliases": cleaned_text
         })
-        
+
         if exact_match:
             return ResolutionResult(
                 raw_text=raw_text,
@@ -62,13 +62,13 @@ class MerchantResolver:
         # For Phase 3, we use a regex query against the aliases array.
         words = cleaned_text.split()
         for word in words:
-            if len(word) < 4: 
+            if len(word) < 4:
                 continue # Skip short words like "LTD", "PVT", "INC"
-                
+
             substring_match = await db.merchants.find_one({
                 "aliases": {"$regex": f"^{word}", "$options": "i"}
             })
-            
+
             if substring_match:
                 return ResolutionResult(
                     raw_text=raw_text,

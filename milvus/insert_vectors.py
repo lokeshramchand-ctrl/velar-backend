@@ -1,5 +1,7 @@
 import logging
+
 from pymilvus import DataType
+
 from database.milvus import vector_db
 
 logger = logging.getLogger(__name__)

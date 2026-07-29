@@ -1,8 +1,10 @@
-import httpx
-import logging
 import json
-from typing import Dict, Any
-from core.ollama_client import get_ollama_host, LLM_MODEL
+import logging
+from typing import Any
+
+import httpx
+
+from core.ollama_client import LLM_MODEL, get_ollama_host
 
 logger = logging.getLogger(__name__)
 
@@ -10,7 +12,7 @@ class ExplanationGenerator:
     def __init__(self):
         self.system_prompt = """
 You are the Velar Transaction Intelligence Reasoning Engine.
-Your ONLY purpose is to explain transaction categorizations or recommend financial insights based STRICTLY on the provided XML context. 
+Your ONLY purpose is to explain transaction categorizations or recommend financial insights based STRICTLY on the provided XML context.
 
 RULES:
 1. DO NOT act like a chatbot. Do not say "Hello", "Sure", or "I can help with that."
@@ -23,7 +25,7 @@ RULES:
 }
 """
 
-    async def generate_explanation(self, query: str, context_string: str) -> Dict[str, Any]:
+    async def generate_explanation(self, query: str, context_string: str) -> dict[str, Any]:
         if context_string == "NO_CONTEXT_AVAILABLE":
             return {"error": "No historical behavior found to explain this transaction."}
 
@@ -43,7 +45,7 @@ RULES:
                 response = await client.post(api_url, json=payload, timeout=30.0)
                 response.raise_for_status()
                 data = response.json()
-                
+
                 # Parse the JSON string returned by the LLM
                 return json.loads(data["response"])
             except Exception as e:

@@ -1,5 +1,7 @@
-import httpx
 import logging
+
+import httpx
+
 from core.config import settings
 
 logger = logging.getLogger(__name__)

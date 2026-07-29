@@ -1,29 +1,26 @@
-from datetime import datetime, timezone
 import re
+from datetime import UTC, datetime
+
 from fastapi import APIRouter, Request
-from pydantic import BaseModel
-from models.schemas import CategorizeRequest, CategorizeResponse , ResolutionResult
-from engines.rule_engine import rule_engine
-from engines.confidence_engine import confidence_engine
-from models.schemas import ConfidenceEvaluation
-import time
-from services.merchant_resolver import merchant_resolver
-from database.mongo import db
+from pydantic import BaseModel, Field
+
 from core.rate_limiter import limiter
+from database.mongo import db
+from engines.confidence_engine import confidence_engine
+from engines.rule_engine import rule_engine
+from models.schemas import CategorizeRequest, CategorizeResponse, ConfidenceEvaluation, ResolutionResult
+from services.merchant_resolver import merchant_resolver
 
 router = APIRouter(prefix="/v1", tags=["Transaction Intelligence"])
 
 @router.post("/categorize", response_model=CategorizeResponse)
 @limiter.limit("50/minute")
 async def categorize_transaction(request: Request, payload: CategorizeRequest):
-    # Phase 11 Foresight: We can track latency here later
-    start_time = time.time()
-
     # Process text through the Rule Engine
     result = rule_engine.categorize(payload.text)
 
-    process_time = time.time() - start_time
-    # TODO: Log process_time to Prometheus for Latency metrics
+    # Per-request latency is already captured automatically for every route by
+    # prometheus_fastapi_instrumentator (see app.py) - no need to hand-roll it here.
     amount = 0.0
     text_content = payload.text
     amount_match = re.search(r'₹\s*([0-9.,]+)', text_content)
@@ -38,13 +35,13 @@ async def categorize_transaction(request: Request, payload: CategorizeRequest):
         "category": result["category"],
         "amount": amount,
         "confidence": result["confidence"],
-        "timestamp": datetime.now(timezone.utc)
+        "timestamp": datetime.now(UTC)
     })
 
     return {**result, "transaction_id": str(insert_result.inserted_id)}
 
 class ResolveRequest(BaseModel):
-    text: str
+    text: str = Field(..., min_length=1, max_length=2000)
 
 @router.post("/resolve", response_model=ResolutionResult)
 async def resolve_transaction_merchant(request: ResolveRequest):
@@ -55,13 +52,13 @@ async def resolve_transaction_merchant(request: ResolveRequest):
     return result
 
 class MockModelPrediction(BaseModel):
-    predicted_category: str
-    raw_confidence: float
+    predicted_category: str = Field(..., min_length=1, max_length=100)
+    raw_confidence: float = Field(..., ge=0.0, le=1.0)
 
 @router.post("/confidence/evaluate", response_model=ConfidenceEvaluation)
 async def evaluate_prediction_confidence(request: MockModelPrediction):
     """
-    Phase 5 Endpoint: Evaluates an upstream category prediction. 
+    Phase 5 Endpoint: Evaluates an upstream category prediction.
     Forces the response to 'Unknown' if the confidence wall is breached.
     """
     evaluation = confidence_engine.evaluate(

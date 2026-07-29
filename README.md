@@ -22,7 +22,7 @@ Velar ingests raw, messy transaction strings (UPI references, bank SMS, POS narr
 
 ## Project Status
 
-> **Pre-production, stabilized.** Velar's architecture is genuinely ambitious — a 15-phase pipeline from ingestion through explainability. Every critical/high/medium defect previously tracked in [`docs/16-known-issues-tech-debt.md`](./docs/16-known-issues-tech-debt.md) has been fixed and verified (full test suite green against a real MongoDB instance, every module import-checked). What remains open is genuine feature work requiring an infrastructure decision — a task queue for retraining, an ML observability platform — not bugs; see that doc's §16.5 for the honest list of what's still ahead.
+> **Pre-production, stabilized and hardened.** Velar's architecture is genuinely ambitious — a 15-phase pipeline from ingestion through explainability. Every critical/high/medium defect previously tracked in [`docs/16-known-issues-tech-debt.md`](./docs/16-known-issues-tech-debt.md) has been fixed and verified. On top of that, a full production-hardening/security audit — [`docs/21-production-hardening-audit.md`](./docs/21-production-hardening-audit.md) — closed real gaps: request-size limits, a concurrency race in the memory/trust engine, zero-to-real MongoDB indexes, a non-root multi-stage Docker build, CI with lint/test/dependency/secret/container scanning, and every known CVE in the pinned dependencies patched (verified via `pip-audit`). What remains open is genuine feature work requiring an infrastructure decision — a task queue for retraining, an ML observability platform — not bugs or hardening gaps; see that audit's §10 for the honest list of what's still ahead.
 
 ---
 
@@ -366,19 +366,19 @@ Velar is transparent about its own maturity. The full, continuously-maintained l
 - **The retraining queue has no executor.** Corrections accumulate and get marked `"processing"` once the threshold is hit, but nothing actually retrains a model yet — that needs a task queue (Celery + broker), which is an infra decision for whoever operates this.
 - **`training/train.py` and `training/finetune.py` train on synthetic data**, not real feedback/transaction data — their docstrings describe the intended MongoDB queries, but that data-assembly pipeline isn't built yet.
 - **Observability endpoints are stubs** — no Evidently AI / MLflow integration exists yet.
-- **No caching layer and no database indexes exist yet** — fine for development, a real constraint before any production load.
+- **No caching layer yet** — nothing in current traffic patterns demonstrably needs one; MongoDB indexes now exist (see [21 · Production Hardening Audit](./docs/21-production-hardening-audit.md)), a cache is separate follow-up work once a real hot path is measured.
 - **The new `/v1/pipelines/*` endpoints are manually triggered** — nothing schedules them yet (no cron/Celery beat in this repo).
+- **No per-caller authorization** — every request bearing the single shared `VELAR_API_KEY` gets identical access; real multi-tenancy is a scoped feature, not a hardening tweak.
 
 ## Roadmap
 
 - [ ] Stand up a task queue (Celery + broker) and wire the retraining executor to it
 - [ ] Build a real MongoDB-backed training data pipeline for `training/train.py` and `training/finetune.py`
-- [ ] Add MongoDB indexes on every actively-queried field
 - [ ] Schedule `/v1/pipelines/*` (behavior, embeddings, decay, graph, clustering) on a cron/Celery beat instead of manual triggers
 - [ ] Wire real Evidently AI / MLflow observability instead of the current stubs
-- [ ] Add a CI pipeline (lint, type-check, test) and a LICENSE
-- [ ] Introduce a caching layer for repeated embedding/analytics queries
-- [ ] Real multi-tenancy: per-user data scoping instead of a hardcoded test user
+- [ ] Add a LICENSE (CI — lint/test/dependency/secret/container scanning — is now in place, see [21 · Production Hardening Audit](./docs/21-production-hardening-audit.md))
+- [ ] Introduce a caching layer once a real hot query pattern is measured
+- [ ] Real multi-tenancy: per-caller API keys with actual scoping, instead of one shared key
 
 ## Contributing
 

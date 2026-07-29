@@ -1,7 +1,7 @@
 import json
+import logging
 import re
 from pathlib import Path
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ class RuleEngine:
 
     def _load_rules(self) -> dict:
         try:
-            with open(ALIASES_FILE, "r") as f:
+            with open(ALIASES_FILE) as f:
                 logger.info("Loaded merchant aliases.")
                 return json.load(f)
         except FileNotFoundError:
@@ -42,7 +42,7 @@ class RuleEngine:
                     "category": data["category"],
                     "confidence": 0.95  # High confidence for deterministic rules
                 }
-        
+
         # Fallback if no rule matches
         return {
             "merchant": "Unknown",

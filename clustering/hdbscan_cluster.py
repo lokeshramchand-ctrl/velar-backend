@@ -1,6 +1,7 @@
-from sklearn.cluster import HDBSCAN
-import numpy as np
 import logging
+
+import numpy as np
+from sklearn.cluster import HDBSCAN
 
 logger = logging.getLogger(__name__)
 
@@ -16,10 +17,10 @@ class DensityClusterer:
     def fit_predict(self, data: np.ndarray) -> np.ndarray:
         logger.info("Running HDBSCAN density clustering...")
         labels = self.clusterer.fit_predict(data)
-        
+
         n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
         noise_points = list(labels).count(-1)
-        
+
         logger.info(f"Discovery Complete: Found {n_clusters} distinct clusters. Ignored {noise_points} noisy outliers.")
         return labels
 
