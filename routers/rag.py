@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
-from rag.retriever import context_retriever
+
+from core.rate_limiter import limiter
 from rag.context_builder import context_builder
 from rag.generator import explanation_generator
-from core.rate_limiter import limiter
+from rag.retriever import context_retriever
 
 router = APIRouter(prefix="/v1", tags=["Explainability"])
 

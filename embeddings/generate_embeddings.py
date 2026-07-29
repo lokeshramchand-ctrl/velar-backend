@@ -1,12 +1,13 @@
-import httpx
 import logging
-from typing import List
-from core.ollama_client import get_ollama_host, EMBED_MODEL
+
+import httpx
+
+from core.ollama_client import EMBED_MODEL, get_ollama_host
 
 logger = logging.getLogger(__name__)
 
 class EmbeddingGenerator:
-    async def generate(self, text: str) -> List[float]:
+    async def generate(self, text: str) -> list[float]:
         """Calls the Ollama API to generate vector embeddings."""
         payload = {
             "model": EMBED_MODEL,

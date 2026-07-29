@@ -1,11 +1,9 @@
+import logging
+
 import numpy as np
 import pandas as pd
 import shap
-from typing import Dict, Any, List
-from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score, f1_score, top_k_accuracy_score
-)
-import logging
+from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, top_k_accuracy_score
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +24,7 @@ class ModelEvaluator:
         for i in range(n_bins):
             in_bin = np.logical_and(confidences > bin_boundaries[i], confidences <= bin_boundaries[i+1])
             prob_in_bin = in_bin.mean()
-            
+
             if prob_in_bin > 0:
                 accuracy_in_bin = accuracies[in_bin].mean()
                 avg_confidence_in_bin = confidences[in_bin].mean()
@@ -34,9 +32,9 @@ class ModelEvaluator:
 
         return float(ece)
 
-    def evaluate(self, model_name: str, y_true: np.ndarray, y_pred: np.ndarray, y_prob: np.ndarray, classes: List[str]) -> Dict[str, float]:
+    def evaluate(self, model_name: str, y_true: np.ndarray, y_pred: np.ndarray, y_prob: np.ndarray, classes: list[str]) -> dict[str, float]:
         """Calculates standard classification metrics."""
-        
+
         # Safe Top-3 calculation (fallback to Top-1 if fewer than 3 classes exist)
         k = min(3, len(classes))
         top_k = top_k_accuracy_score(y_true, y_prob, k=k, labels=np.arange(len(classes)))
@@ -50,12 +48,12 @@ class ModelEvaluator:
             f"top_{k}_accuracy": round(top_k, 4),
             "calibration_error_ece": round(self.expected_calibration_error(y_true, y_prob), 4)
         }
-        
+
         logger.info(f"[{model_name}] Eval Complete - F1: {metrics['f1_macro']} | ECE: {metrics['calibration_error_ece']}")
         return metrics
 
     @staticmethod
-    def generate_shap_importances(model, X_test: pd.DataFrame, model_name: str) -> Dict[str, float]:
+    def generate_shap_importances(model, X_test: pd.DataFrame, model_name: str) -> dict[str, float]:
         """
         Calculates Global Feature Importance using SHAP.
         Explains *why* the model makes its decisions.
@@ -65,7 +63,7 @@ class ModelEvaluator:
             if model_name in ["RandomForest", "XGBoost", "LightGBM"]:
                 explainer = shap.TreeExplainer(model)
                 shap_values = explainer.shap_values(X_test)
-                
+
                 # Handle multi-class shape outputs from different tree models safely
                 if isinstance(shap_values, list):
                     vals = np.abs(shap_values[0]).mean(0)
@@ -79,11 +77,11 @@ class ModelEvaluator:
                 shap_values = explainer.shap_values(X_test)
                 vals = np.abs(shap_values).mean(0)
 
-            feature_importance = pd.DataFrame(list(zip(X_test.columns, vals)), columns=['feature', 'importance'])
+            feature_importance = pd.DataFrame(list(zip(X_test.columns, vals, strict=True)), columns=['feature', 'importance'])
             feature_importance.sort_values(by=['importance'], ascending=False, inplace=True)
-            
+
             return feature_importance.set_index('feature')['importance'].to_dict()
-            
+
         except Exception as e:
             logger.warning(f"SHAP generation failed for {model_name}: {e}")
             return {}

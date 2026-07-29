@@ -1,9 +1,11 @@
-from datetime import datetime, timezone
-from typing import Dict, Any, List
+from datetime import datetime
+from typing import Any
+
 from database.mongo import db
 
+
 class SpendingPatternsEngine:
-    async def get_category_breakdown(self, user_id: str, start_date: datetime, end_date: datetime) -> List[Dict[str, Any]]:
+    async def get_category_breakdown(self, user_id: str, start_date: datetime, end_date: datetime) -> list[dict[str, Any]]:
         """Aggregates total spending by category for a specific timeframe."""
         pipeline = [
             {"$match": {
@@ -17,11 +19,11 @@ class SpendingPatternsEngine:
             }},
             {"$sort": {"total_amount": -1}}
         ]
-        
+
         cursor = db.transactions.aggregate(pipeline)
         return [{"category": doc["_id"] or "Unknown", "total_amount": doc["total_amount"], "count": doc["transaction_count"]} async for doc in cursor]
 
-    async def get_merchant_frequency(self, user_id: str, limit: int = 5) -> List[Dict[str, Any]]:
+    async def get_merchant_frequency(self, user_id: str, limit: int = 5) -> list[dict[str, Any]]:
         """Identifies the most frequently visited merchants."""
         pipeline = [
             {"$match": {"user_id": user_id}},

@@ -1,6 +1,8 @@
 import logging
 import time
+
 from pymilvus import MilvusClient, MilvusException
+
 from core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -32,7 +34,7 @@ class VectorDB:
                 )
                 time.sleep(delay)
 
-            except Exception as e:
+            except Exception:
                 logger.exception("Unexpected error while connecting to Milvus")
                 time.sleep(delay)
 
@@ -46,7 +48,7 @@ class VectorDB:
             try:
                 cls.client.close()
                 logger.info("Milvus disconnected successfully.")
-            except Exception as e:
+            except Exception:
                 logger.exception("Error while disconnecting Milvus")
             finally:
                 cls.client = None

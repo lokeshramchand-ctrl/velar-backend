@@ -1,5 +1,6 @@
 from fastapi import APIRouter, BackgroundTasks
 from pydantic import BaseModel, Field
+
 from feedback.feedback_service import feedback_service
 from feedback.retraining_queue import retraining_manager
 
@@ -14,7 +15,7 @@ class FeedbackRequest(BaseModel):
 @router.post("/")
 async def submit_feedback(request: FeedbackRequest, background_tasks: BackgroundTasks):
     """
-    Accepts human feedback, updates the Active Learning queue, 
+    Accepts human feedback, updates the Active Learning queue,
     and asynchronously checks if the model needs retraining.
     """
     # 1. Process and save the feedback
@@ -24,9 +25,9 @@ async def submit_feedback(request: FeedbackRequest, background_tasks: Background
         corrected_category=request.corrected_category,
         confidence=request.confidence
     )
-    
+
     # 2. Check the queue threshold in the background (so we don't block the API response)
     if result["is_correction"]:
         background_tasks.add_task(retraining_manager.trigger_retraining_if_needed)
-        
+
     return {"status": "success", "feedback_recorded": result["is_correction"]}

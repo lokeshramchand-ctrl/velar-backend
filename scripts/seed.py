@@ -1,10 +1,12 @@
 # backend/scripts/seed_merchants.py
 import asyncio
+
 from database.mongo import db
+
 
 async def seed():
     await db.connect()
-    
+
     # Velar Phase 3 Seed Data
     merchants = [
         {
@@ -20,12 +22,12 @@ async def seed():
             "aliases": ["NETFLIX ENTERTAINMENT", "NFLX", "NETFLIX"]
         }
     ]
-    
+
     # Clear existing and insert
     await db.merchants.delete_many({})
     await db.merchants.insert_many(merchants)
     print("Seeded canonical merchants successfully.")
-    
+
     await db.disconnect()
 
 if __name__ == "__main__":

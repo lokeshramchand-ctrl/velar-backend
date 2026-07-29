@@ -1,24 +1,24 @@
-import numpy as np
 import logging
-from typing import Dict, Any
-from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score, davies_bouldin_score
+from typing import Any
 
+import numpy as np
+from sklearn.metrics import davies_bouldin_score, silhouette_score
+
+from clustering.hdbscan_cluster import hdbscan_clusterer
+from clustering.umap_projection import umap_projector
 from database.mongo import db
 from milvus.insert_vectors import vector_store
-from clustering.umap_projection import umap_projector
-from clustering.hdbscan_cluster import hdbscan_clusterer
 
 logger = logging.getLogger(__name__)
 
 class ClusterEngine:
-    async def run_discovery_pipeline(self) -> Dict[str, Any]:
+    async def run_discovery_pipeline(self) -> dict[str, Any]:
         """
-        Pulls vectors from Milvus, runs UMAP + HDBSCAN, evaluates metrics, 
+        Pulls vectors from Milvus, runs UMAP + HDBSCAN, evaluates metrics,
         and assigns cluster IDs back to the database.
         """
         logger.info("Initiating Phase 8 Clustering Pipeline...")
-        
+
         # 1. Fetch Vectors from Milvus
         # We query for all entities that have an embedding.
         try:
@@ -49,7 +49,7 @@ class ClusterEngine:
 
         # 4. Metrics Evaluation
         metrics = self._calculate_metrics(reduced_embeddings, cluster_labels)
-        
+
         # 5. Persist Discoveries to MongoDB
         await self._persist_clusters(merchant_names, cluster_labels)
 
@@ -60,35 +60,35 @@ class ClusterEngine:
             "metrics": metrics
         }
 
-    def _calculate_metrics(self, data: np.ndarray, labels: np.ndarray) -> Dict[str, float]:
+    def _calculate_metrics(self, data: np.ndarray, labels: np.ndarray) -> dict[str, float]:
         """Calculates unsupervised evaluation metrics."""
         # Metrics require at least 2 valid clusters, and ignore -1 (noise) for pure cluster math
         valid_mask = labels != -1
         valid_data = data[valid_mask]
         valid_labels = labels[valid_mask]
-        
+
         n_clusters = len(set(valid_labels))
-        
+
         if n_clusters < 2:
             return {"silhouette_score": 0.0, "davies_bouldin": 0.0, "note": "Not enough clusters for metrics"}
-            
+
         return {
             # Silhouette: Near 1.0 means clusters are dense and well-separated. < 0 means overlapping.
             "silhouette_score": round(float(silhouette_score(valid_data, valid_labels)), 4),
             # Davies Bouldin: Lower is better. Measures ratio of within-cluster scatter to between-cluster separation.
             "davies_bouldin": round(float(davies_bouldin_score(valid_data, valid_labels)), 4)
-            # Note: Cluster Purity requires labeled ground-truth data, which we will calculate later 
+            # Note: Cluster Purity requires labeled ground-truth data, which we will calculate later
             # when comparing against Phase 2 Rule Engine outputs.
         }
 
     async def _persist_clusters(self, names: list[str], labels: np.ndarray):
         """Updates the MongoDB profiles with their newly discovered cluster IDs."""
         from pymongo import UpdateOne
-        
+
         operations = []
-        for name, label in zip(names, labels):
+        for name, label in zip(names, labels, strict=True):
             cluster_id = f"cluster_{label}" if label != -1 else "noise"
-            
+
             # Upsert the cluster ID into a dedicated collection or update the profile
             operations.append(
                 UpdateOne(
@@ -97,7 +97,7 @@ class ClusterEngine:
                     upsert=True
                 )
             )
-            
+
         if operations:
             await db.behavior_patterns.bulk_write(operations)
             logger.info("Saved cluster assignments to database.")

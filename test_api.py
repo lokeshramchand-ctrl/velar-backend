@@ -1,11 +1,13 @@
+import logging
+import random
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
-import uuid
-import random
-import logging
 
 from app import app
 from core.rate_limiter import limiter
+
 # =====================================================================
 # TEST LOGGER CONFIGURATION
 # =====================================================================
@@ -59,7 +61,7 @@ def test_rate_limiter_defense(client):
     headers_with_ip = {**HEADERS, "X-Forwarded-For": "192.168.1.100"}
 
     try:
-        for i in range(55):
+        for _i in range(55):
             res = client.post("/v1/categorize", json={"text": "test"}, headers=headers_with_ip)
             if res.status_code == 429: # Too Many Requests
                 blocked = True
@@ -107,17 +109,17 @@ def test_memory_engine_lifecycle(client):
     """Tests the entire lifecycle from EPHEMERAL to TEMPORARY state in one flow."""
     unique_merchant = f"Target_{uuid.uuid4().hex[:6]}"
     payload = {"canonical_name": unique_merchant, "raw_text": f"paid {unique_merchant}"}
-    
+
     logger.info(f"Testing Memory State Machine for new entity: {unique_merchant}")
-    
+
     # Encounter 1: Should be EPHEMERAL
     res1 = client.post("/memory/update", json=payload, headers=HEADERS)
     assert res1.json()["memory_state"] == "EPHEMERAL"
     logger.info("Encounter 1: State logged as EPHEMERAL")
-    
+
     # Encounter 2
     client.post("/memory/update", json=payload, headers=HEADERS)
-    
+
     # Encounter 3: Should promote to TEMPORARY
     res3 = client.post("/memory/update", json=payload, headers=HEADERS)
     assert res3.json()["memory_state"] == "TEMPORARY"
@@ -131,7 +133,7 @@ def test_confidence_evaluator_blocks_hallucinations(client):
     logger.info("Testing Confidence Wall with a risky prediction (40% confidence).")
     payload = {"predicted_category": "Travel", "raw_confidence": 0.40}
     response = client.post("/v1/confidence/evaluate", json=payload, headers=HEADERS)
-    
+
     data = response.json()
     assert data["final_category"] == "Unknown"
     assert data["is_hallucination_risk"] is True
@@ -179,7 +181,7 @@ def test_rag_explanation_safety(client):
     logger.info("Testing RAG Explainability Pipeline formatting.")
     payload = {"transaction_text": "Swiggy order", "target_question": "Why?"}
     response = client.post("/v1/explain", json=payload, headers=HEADERS)
-    assert response.status_code in [200, 404, 500] 
+    assert response.status_code in [200, 404, 500]
 
 def test_observability_endpoints(client):
     logger.info("Pinging Observability (Evidently AI) endpoints.")

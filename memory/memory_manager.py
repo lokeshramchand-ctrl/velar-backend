@@ -1,6 +1,7 @@
-from repositories.profile_repository import profile_repo
 from memory.state_machine import state_machine
-from models.schemas import MerchantProfile, MemoryState
+from models.schemas import MemoryState, MerchantProfile
+from repositories.profile_repository import profile_repo
+
 
 class MemoryManager:
     async def process_encounter(self, canonical_name: str, raw_text: str) -> MerchantProfile:

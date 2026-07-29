@@ -1,5 +1,6 @@
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from database.mongo import db
 
 logger = logging.getLogger(__name__)
@@ -11,12 +12,12 @@ class RetrainingQueueManager:
 
     async def check_retraining_status(self) -> dict:
         """
-        Monitors the queue to see if enough concept drift / corrections 
+        Monitors the queue to see if enough concept drift / corrections
         have occurred to justify spinning up the Phase 9 baseline trainer.
         """
         pending_count = await db.retraining_queue.count_documents({"status": "pending"})
         should_retrain = pending_count >= self.batch_threshold
-        
+
         return {
             "pending_corrections": pending_count,
             "threshold": self.batch_threshold,
@@ -29,22 +30,22 @@ class RetrainingQueueManager:
         In Phase 11/14, this will trigger a Celery task tracked by MLflow.
         """
         status = await self.check_retraining_status()
-        
+
         if not status["should_trigger_retraining"]:
             logger.info(f"Retraining not needed yet. Pending: {status['pending_corrections']}/{self.batch_threshold}")
             return False
-            
+
         logger.warning(f"Threshold reached ({status['pending_corrections']} corrections). Triggering Retraining Pipeline...")
-        
+
         # 1. Lock the pending records so they aren't processed twice
         await db.retraining_queue.update_many(
             {"status": "pending"},
-            {"$set": {"status": "processing", "processing_started_at": datetime.now(timezone.utc)}}
+            {"$set": {"status": "processing", "processing_started_at": datetime.now(UTC)}}
         )
-        
+
         # 2. Trigger your training pipeline (from Phase 9)
         # TODO: Launch `BaselineTrainer().run_benchmarks()` via Celery asynchronously here.
-        
+
         return True
 
 retraining_manager = RetrainingQueueManager()

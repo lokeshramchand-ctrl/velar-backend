@@ -1,4 +1,5 @@
-from models.schemas import MerchantProfile, BehaviorPattern
+from models.schemas import BehaviorPattern, MerchantProfile
+
 
 class SemanticVectorizer:
     @staticmethod

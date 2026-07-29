@@ -1,7 +1,8 @@
-from datetime import datetime, timezone, timedelta
-from repositories.profile_repository import profile_repo
-from models.schemas import MemoryState
 import logging
+from datetime import UTC, datetime, timedelta
+
+from models.schemas import MemoryState
+from repositories.profile_repository import profile_repo
 
 logger = logging.getLogger(__name__)
 
@@ -14,19 +15,19 @@ class DecayEngine:
         Finds all profiles inactive for > 180 days and transitions them to ARCHIVED.
         """
         logger.info("Starting Memory Decay Sweep...")
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=self.ARCHIVE_DAYS)
-        
+        cutoff_date = datetime.now(UTC) - timedelta(days=self.ARCHIVE_DAYS)
+
         stale_profiles = await profile_repo.get_stale_profiles(cutoff_date)
-        
+
         archived_count = 0
         for profile in stale_profiles:
-            # Optional: You might decide PERMANENT memory never decays. 
+            # Optional: You might decide PERMANENT memory never decays.
             # If so, add `if profile.memory_state == MemoryState.PERMANENT: continue`
-            
+
             profile.memory_state = MemoryState.ARCHIVED
             await profile_repo.update_profile(profile)
             archived_count += 1
-            
+
         logger.info(f"Sweep complete. {archived_count} profiles moved to ARCHIVED.")
         return archived_count
 

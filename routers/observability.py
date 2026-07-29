@@ -18,6 +18,6 @@ async def fetch_drift_report():
     """
     # For testing purposes, we return 404 to simulate no reports generated yet
     return JSONResponse(
-        status_code=404, 
+        status_code=404,
         content={"message": "No drift reports have been generated yet."}
     )

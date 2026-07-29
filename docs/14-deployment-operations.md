@@ -2,21 +2,19 @@
 
 ## 14.1 Python dependencies
 
-✅ **FIXED.** `requirements.txt` and `requirements-linux.txt` previously listed Ubuntu/`apt`-managed system packages (`attrs`, `Automat`, `Twisted`, `PyGObject`, `python-apt`, `ubuntu-pro-client`, `cloud-init`, etc.) instead of application dependencies. Both files now list the actual runtime dependencies (`fastapi`, `uvicorn`, `pydantic`/`pydantic-settings`, `motor`, `pymilvus`, `slowapi`, `prometheus-fastapi-instrumentator`, `httpx`, `scikit-learn`, `umap-learn`, `networkx`, `pandas`, `numpy`, `lightgbm`, `xgboost`, `shap`, `tabulate`, `torch`, `transformers`, `peft`, `datasets`), pinned to specific versions. `pip install -r requirements.txt` (what `Dockerfile` runs) now installs everything `app.py`'s import graph needs — verified by a clean `import app` and a full `pytest` pass in a fresh virtualenv built solely from this file. See [Known Issues §16.1](./16-known-issues-tech-debt.md#161-critical-previously-broke-the-application-or-a-whole-feature--all-fixed).
+✅ **FIXED**, and since further hardened — full detail in [21 · Production Hardening Audit §8](./21-production-hardening-audit.md#8-dependencies-updated). `requirements.txt` previously listed Ubuntu/`apt`-managed system packages instead of application dependencies; that's fixed, and it's now further split: `requirements.txt` (installed by the Dockerfile) has only what the live API actually imports, while `torch`/`transformers`/`peft`/`datasets`/`pandas`/`lightgbm`/`xgboost`/`shap`/`tabulate` — used exclusively by `training/train.py` and `training/finetune.py`, never imported by the live app — moved to `requirements-training.txt`, which the production image never installs. Every pinned version was also run through `pip-audit`; the audit found and fixed real CVEs in `fastapi`/`starlette`, `pytest`, and `setuptools`, including two genuine dependency-upgrade regressions (a `prometheus-fastapi-instrumentator` incompatibility and a `pymilvus`/`setuptools` `pkg_resources` conflict) that were only caught by actually re-running the test suite and the Docker build — see the audit doc for the exact errors and fixes.
 
 ## 14.2 Dockerfile
 
 ```dockerfile
-FROM python:3.12-slim
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+FROM python:3.12-slim AS builder
+# ... installs deps into /install ...
+FROM python:3.12-slim AS runtime
+# ... copies only /install, runs as a non-root `velar` user, HEALTHCHECK on /live ...
 ```
-Single-stage build. No multi-stage optimization, no non-root user, no `HEALTHCHECK` directive. Base image is `python:3.12-slim` — worth noting `README.md` states "Python 3.10+" and `.dockerignore`/tooling elsewhere imply a range of supported versions; the container specifically pins `3.12`.
+✅ **FIXED** — now a multi-stage build (build tools and pip cache never reach the final image), runs as a non-root user (verified: `docker run ... id` reports `uid=999(velar)`), and has a `HEALTHCHECK` polling `/live`. See [21 · Production Hardening Audit §6](./21-production-hardening-audit.md#6-docker-improvements) for the full Dockerfile and verification detail. Base image is deliberately kept at `python:3.12-slim` rather than Alpine — Alpine's musl libc has known friction with the scientific-Python wheels (`scikit-learn`, `numpy`, `umap-learn`) the clustering endpoint needs at runtime.
 
-`.dockerignore` excludes `.venv`, `__pycache__/`, `*.log`, `.git`, `.gitignore` — notably `.env` is **not** in `.dockerignore`, meaning if a `.env` file exists in the build context when `COPY . .` runs, secrets would be baked into the image layer. In this repo's current `docker-compose_production.yaml` (see §14.3), secrets are instead passed via the `environment:` block, not a `.env` file, which avoids this — but if you switch to `env_file:` in production (as `docker-compose_local.yaml` does), be sure `.env` is excluded from the Docker build context or only mounted at runtime, not baked in.
+`.dockerignore` now excludes `.env`, `*.pem`/`*.key`, local dev venvs, `.git`, docs, and the local-only compose files — previously `.env` was **not** excluded, meaning a `.env` file present in the build context would have been baked into the image layer via `COPY . .`. Fixed.
 
 ## 14.3 Docker Compose environments
 
@@ -49,6 +47,8 @@ services:
 ✅ **FIXED — both issues.** This file previously committed a plaintext MongoDB username/password directly in the connection string, and used env var names (`MONGO_URI`, `MONGO_DB_NAME`, `MILVUS_HOST`, `MILVUS_PORT`) that didn't match what `core/config.py` reads. It now sources every value via `${VAR:?required}`/`${VAR:-default}` substitution from a compose `.env` file or the host/CI secret store, with names matching `Settings` exactly. See [Known Issues §16.2–16.3](./16-known-issues-tech-debt.md).
 
 **Action still required from whoever operates this deployment** (not something fixable from inside the repo): the credential previously committed here is in git history and must be treated as compromised — rotate it on the actual MongoDB server. Removing it from the tracked file does not undo its prior exposure.
+
+✅ **Also fixed in the production-hardening audit** ([21 · §6](./21-production-hardening-audit.md#6-docker-improvements)): this file previously also bind-mounted the entire repo (`volumes: - .:/app`), which meant "production" actually ran whatever was on the host filesystem at deploy time, not the code baked into the versioned image — that bind mount is removed here (kept, intentionally, in `docker-compose_local.yaml` for dev hot-reload). Also added: `security_opt: [no-new-privileges:true]`, `cap_drop: [ALL]`, and starting `deploy.resources.limits/reservations` for CPU/memory.
 
 ## 14.4 Required environment variables (authoritative — from `core/config.py`)
 

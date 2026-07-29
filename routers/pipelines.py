@@ -1,16 +1,17 @@
 import logging
+
 from fastapi import APIRouter, HTTPException, Path, Request
 from pydantic import BaseModel, Field
 
-from database.mongo import db
-from models.schemas import BehaviorPattern
 from behaviour.behavior_engine import behavior_engine
-from memory.decay_engine import decay_engine
-from graphs.graph_builder import graph_engine
-from embeddings.vectorizer import vectorizer
-from embeddings.generate_embeddings import embedding_generator
-from milvus.insert_vectors import vector_store
 from core.rate_limiter import limiter
+from database.mongo import db
+from embeddings.generate_embeddings import embedding_generator
+from embeddings.vectorizer import vectorizer
+from graphs.graph_builder import graph_engine
+from memory.decay_engine import decay_engine
+from milvus.insert_vectors import vector_store
+from models.schemas import BehaviorPattern
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +29,7 @@ async def run_behavior_profiling(request: Request, payload: MerchantRequest):
     try:
         return await behavior_engine.profile_merchant_behavior(payload.merchant_name)
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @router.post("/behavior/run-all")

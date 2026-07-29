@@ -1,6 +1,8 @@
-import networkx as nx
 import logging
-from typing import Dict, Any, List
+from typing import Any
+
+import networkx as nx
+
 from database.mongo import db
 
 logger = logging.getLogger(__name__)
@@ -10,7 +12,7 @@ class KnowledgeGraphBuilder:
         # Directed Graph to represent asymmetric relationships (e.g., Merchant BELONGS_TO Cluster)
         self.graph = nx.DiGraph()
 
-    async def build_graph(self) -> Dict[str, Any]:
+    async def build_graph(self) -> dict[str, Any]:
         """
         Extracts intelligence from MongoDB and constructs a multi-relational Knowledge Graph.
         """
@@ -25,14 +27,14 @@ class KnowledgeGraphBuilder:
         # 2. Map Merchant and Memory Nodes
         for m in merchants:
             name = m.get("canonical_name")
-            if not name: 
+            if not name:
                 continue
-                
+
             memory_state = m.get("memory_state", "EPHEMERAL")
 
             # Add Merchant Node
             self.graph.add_node(name, node_type="Merchant", entity_type=m.get("entity_type"))
-            
+
             # Add Memory Node & Relationship
             memory_node_id = f"Memory_{memory_state}"
             self.graph.add_node(memory_node_id, node_type="Memory")
@@ -47,8 +49,8 @@ class KnowledgeGraphBuilder:
                 # Add Behavior Node & Relationship
                 behavior_node_id = f"Behavior_{merchant_name}"
                 self.graph.add_node(
-                    behavior_node_id, 
-                    node_type="Behavior", 
+                    behavior_node_id,
+                    node_type="Behavior",
                     avg_amount=b.get("avg_amount", 0),
                     periodicity=b.get("periodicity_score", 0)
                 )
@@ -79,11 +81,11 @@ class KnowledgeGraphBuilder:
             "total_edges": self.graph.number_of_edges(),
             "density": round(nx.density(self.graph), 5)
         }
-        
+
         logger.info(f"Knowledge Graph Generation Complete: {metrics}")
         return metrics
 
-    def get_merchant_neighborhood(self, merchant_name: str, radius: int = 2) -> Dict[str, Any]:
+    def get_merchant_neighborhood(self, merchant_name: str, radius: int = 2) -> dict[str, Any]:
         """
         Extracts the ego graph (local neighborhood) for a specific merchant.
         Useful for visualization or extracting context for the Phase 12 RAG LLM.
@@ -93,7 +95,7 @@ class KnowledgeGraphBuilder:
 
         # Extract the local subgraph within the specified radius
         ego_graph = nx.ego_graph(self.graph, merchant_name, radius=radius)
-        
+
         # Serialize the graph into a JSON-friendly format for APIs/Visualizations
         nodes = [{"id": n, **ego_graph.nodes[n]} for n in ego_graph.nodes()]
         edges = [{"source": u, "target": v, "relation": d.get("relation")} for u, v, d in ego_graph.edges(data=True)]

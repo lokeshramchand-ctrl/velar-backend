@@ -1,30 +1,30 @@
-from contextlib import asynccontextmanager
 import logging
-import httpx
-from fastapi import FastAPI, Depends
-from fastapi.responses import JSONResponse
+from contextlib import asynccontextmanager
 
-# Settings
-from core.config import settings
-from core.ollama_client import get_ollama_host
+import httpx
+from fastapi import Depends, FastAPI
+from fastapi.responses import JSONResponse
 
 # Middleware & Security
 from prometheus_fastapi_instrumentator import Instrumentator
-from core.security import validate_api_key
-from core.rate_limiter import setup_rate_limiting
-from core.middleware import RequestIDMiddleware, SecurityHeadersMiddleware, BodySizeLimitMiddleware
+
+# Settings
+from core.config import settings
 from core.error_handlers import register_exception_handlers
+from core.middleware import BodySizeLimitMiddleware, RequestIDMiddleware, SecurityHeadersMiddleware
+from core.ollama_client import get_ollama_host
+from core.rate_limiter import setup_rate_limiting
+from core.security import validate_api_key
+from database.milvus import vector_db
 
 # Databases
 from database.mongo import db
-from database.milvus import vector_db
+from feedback.api_router import router as feedback_router
 from milvus.insert_vectors import vector_store
 
 # Routers
-from routers import v1, memory, analytics, rag, pipelines
+from routers import analytics, memory, pipelines, rag, v1
 from routers.observability import router as observability_router
-from feedback.api_router import router as feedback_router
-
 
 # Logging
 # LOG_LEVEL defaults to INFO (never DEBUG by default): at DEBUG, pymongo/motor
@@ -185,7 +185,7 @@ if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
         "app:app",
-        host="0.0.0.0",
+        host="0.0.0.0",  # noqa: S104 - intentional: must accept connections from outside the container/network namespace, not just localhost
         port=8000,
         reload=(settings.ENVIRONMENT == "development"),
     )

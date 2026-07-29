@@ -1,20 +1,21 @@
 import logging
-from datetime import datetime, timezone
-from typing import Optional, Tuple
+from datetime import UTC, datetime
+
 from pymongo import ReturnDocument
+
 from database.mongo import db
-from models.schemas import MerchantProfile, MemoryState
+from models.schemas import MemoryState, MerchantProfile
 
 logger = logging.getLogger(__name__)
 
 class ProfileRepository:
-    async def get_profile(self, canonical_name: str) -> Optional[MerchantProfile]:
+    async def get_profile(self, canonical_name: str) -> MerchantProfile | None:
         data = await db.merchant_profiles.find_one({"canonical_name": canonical_name}, {"_id": 0})
         if data:
             return MerchantProfile(**data)
         return None
 
-    async def increment_encounter(self, canonical_name: str, raw_text: str) -> Tuple[MerchantProfile, bool]:
+    async def increment_encounter(self, canonical_name: str, raw_text: str) -> tuple[MerchantProfile, bool]:
         """
         Atomically records one encounter of a merchant: increments frequency,
         bumps last_seen, adds the alias if new, and creates the profile on
@@ -34,7 +35,7 @@ class ProfileRepository:
         Returns (profile, is_new) where is_new is True only for the very
         first encounter (frequency == 1 immediately after $inc).
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         doc = await db.merchant_profiles.find_one_and_update(
             {"canonical_name": canonical_name},
             {
@@ -50,6 +51,7 @@ class ProfileRepository:
             },
             upsert=True,
             return_document=ReturnDocument.AFTER,
+            projection={"_id": 0},
         )
         profile = MerchantProfile(**doc)
         is_new = profile.frequency == 1

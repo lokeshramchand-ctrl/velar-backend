@@ -1,5 +1,6 @@
 import logging
-from models.schemas import TransactionCategory, ConfidenceEvaluation
+
+from models.schemas import ConfidenceEvaluation, TransactionCategory
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +12,7 @@ class ConfidenceEngine:
 
     def calibrate_probability(self, raw_confidence: float, category: str) -> float:
         """
-        Applies a calibration scale factor. 
+        Applies a calibration scale factor.
         In Phase 9+, this will map back to a calibrated Platt scaling or isotonic regression vector.
         For now, it acts as an identity pass-through.
         """
@@ -25,7 +26,7 @@ class ConfidenceEngine:
         and overrides the category to 'Unknown'.
         """
         calibrated_conf = self.calibrate_probability(raw_confidence, predicted_category)
-        
+
         # Guard clause for out-of-vocabulary model responses
         if predicted_category not in self.valid_categories:
             logger.warning(f"Model returned invalid category '{predicted_category}'. Defaulting to Unknown.")

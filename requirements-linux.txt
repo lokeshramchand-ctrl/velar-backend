@@ -1,37 +1,29 @@
-# Web framework & server
-fastapi==0.115.6
+# Historically a separate "full Linux system" superset of requirements.txt;
+# nothing in this repo (Dockerfile, CI, docs) actually installs from this
+# file specifically, so it's kept identical to requirements.txt to avoid the
+# two files silently drifting apart again. If you need a genuinely different
+# dependency set for a specific Linux target, prefer adding a clearly-named
+# extra requirements file instead of reintroducing drift here.
+
+# Core runtime dependencies for the live API (app.py's import graph).
+setuptools==83.0.0  # patched per pip-audit; pymilvus>=2.6 no longer needs pkg_resources from it
+fastapi==0.140.13  # pulls in a starlette version with no known CVEs, see requirements.txt
 uvicorn[standard]==0.34.0
 pydantic==2.10.4
 pydantic-settings==2.7.1
 
-# Rate limiting & observability
 slowapi==0.1.9
-prometheus-fastapi-instrumentator==7.0.0
+prometheus-fastapi-instrumentator==8.1.0  # 7.0.0 breaks under the newer starlette pulled in by fastapi above
 
-# HTTP client (Ollama, health checks)
 httpx==0.28.1
 
-# Databases
 motor==3.6.0
 pymongo==4.9.2
-pymilvus==2.5.3
+pymilvus==2.6.17
 
-# Data / ML
 numpy==1.26.4
-pandas==2.2.3
 scikit-learn==1.5.2
 umap-learn==0.5.7
 networkx==3.4.2
-lightgbm==4.5.0
-xgboost==2.1.3
-shap==0.46.0
-tabulate==0.9.0
 
-# Fine-tuning stack (training/finetune.py)
-torch==2.5.1
-transformers==4.47.1
-peft==0.14.0
-datasets==3.2.0
-
-# Testing
-pytest==8.3.4
+pytest==9.1.1  # patched per pip-audit (PYSEC-2026-1845 affects <9.0.3)
