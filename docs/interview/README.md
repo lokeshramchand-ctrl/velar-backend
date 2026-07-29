@@ -1,5 +1,7 @@
 # Velar — Senior Engineer Interview Question Bank
 
+> **Note on currency**: these questions were written against an earlier snapshot of the codebase and many reference bugs that have since been fixed (see [`docs/16-known-issues-tech-debt.md`](../16-known-issues-tech-debt.md) for current status). They still work well as interview material — "what was wrong and how would you fix it" is a fine question whether or not the fix has since landed — just don't assume every bug referenced below is still present in the code today.
+
 204 questions, organized into 13 categories, generated entirely from this codebase's actual implementation — every question references a real file, function, bug, or design decision documented elsewhere in `/docs`. None of these are generic framework trivia; if you can't answer a question by reasoning about *this specific code*, that's the point.
 
 ## Two honest deviations from a generic template

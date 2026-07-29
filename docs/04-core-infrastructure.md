@@ -23,23 +23,22 @@ Because these are all required (no default) except where noted, **the process wi
 
 ## 4.2 Ollama host resolution — `core/ollama_client.py`
 
-This module does real work **at import time** (not lazily): it computes `OLLAMA_HOST`, `EMBED_MODEL`, `LLM_MODEL` as module-level constants the first time anything imports `core.ollama_client`.
+✅ **FIXED — resolution is now deferred to first use, not import time.** Previously this module computed `OLLAMA_HOST` as a module-level constant the moment anything imported `core.ollama_client`, and would `raise RuntimeError` from that import if `OLLAMA_URI` wasn't set and every host in `OLLAMA_HOSTS` failed its 2-second health check — crashing the entire app at startup (via `app.py` → `routers.rag` → `rag.generator` → `core.ollama_client`), not just degrading RAG/embeddings.
 
 ```mermaid
 flowchart TD
-    A[Module import] --> B{settings.OLLAMA_URI set?}
-    B -- yes --> C[OLLAMA_HOST = OLLAMA_URI]
-    B -- no --> D[resolve_ollama_host(ollama_hosts_list)]
-    D --> E{hosts list empty?}
-    E -- yes --> F[raise RuntimeError]
-    E -- no --> G[for each host: GET host, 2s timeout]
-    G --> H{status_code == 200?}
-    H -- yes --> I[return this host]
-    H -- no, more hosts --> G
-    H -- no, exhausted --> J[raise RuntimeError: all hosts failed]
+    A[First actual API call needing Ollama] --> B[get_ollama_host called]
+    B --> C{already resolved this process?}
+    C -- yes --> Z[return cached host]
+    C -- no --> D{settings.OLLAMA_URI set?}
+    D -- yes --> E[cache + return OLLAMA_URI]
+    D -- no --> F[resolve_ollama_host: GET each host, 2s timeout]
+    F --> G{any host returns 200?}
+    G -- yes --> E
+    G -- no --> H[raise RuntimeError — only this request fails, app already running]
 ```
 
-Consumers: `rag/generator.py` and `embeddings/generate_embeddings.py` both import `OLLAMA_HOST`, `EMBED_MODEL`/`LLM_MODEL` from this module and build their API URLs by string concatenation (`f"{OLLAMA_HOST}/api/generate"`, `f"{OLLAMA_HOST}/api/embeddings"`). Because resolution happens at import time and raises on total failure, **any request touching the RAG or embedding pipeline will crash the whole process at import** if no configured Ollama host is reachable when that module is first imported (which, given Python's import caching, is typically at app startup via the router import chain: `app.py` → `routers.rag` → `rag.generator` → `core.ollama_client`).
+Consumers: `rag/generator.py` and `embeddings/generate_embeddings.py` now call `get_ollama_host()` inside their request-handling methods (not at `__init__`/import time) and build their API URLs per-call. A temporarily-unreachable Ollama fleet now only fails the specific RAG/embedding request that needed it, instead of preventing the whole app from starting. See [16 · Known Issues §16.3](./16-known-issues-tech-debt.md#163-medium-previously-disconnected-features-dead-code-silent-no-ops--fixed).
 
 ## 4.3 Security — `core/security.py`
 
@@ -47,23 +46,23 @@ Consumers: `rag/generator.py` and `embeddings/generate_embeddings.py` both impor
 async def validate_api_key(api_key_header: str = Security(api_key_header)) -> str:
     if not api_key_header:
         raise HTTPException(401, "Missing X-Velar-API-Key header")
-    if api_key_header != "velar_test_key_123":
+    if api_key_header != settings.VELAR_API_KEY:
         raise HTTPException(403, "Invalid or revoked API Key")
     return "developer_id_789"
 ```
 
 - The header name is `X-Velar-API-Key` (`API_KEY_NAME`), implemented via `fastapi.security.api_key.APIKeyHeader(auto_error=False)` so that a missing header is handled explicitly (401) rather than FastAPI's default 403.
-- The comparison value is a **hardcoded literal**, not `settings.VELAR_API_KEY`. Every deployment of this code accepts exactly one key: `velar_test_key_123`, regardless of what is configured in `.env`. This is flagged as a critical finding in [Known Issues](./16-known-issues-tech-debt.md#hardcoded-api-key).
-- On success, the function returns a **hardcoded identity string** `"developer_id_789"` — there is no real multi-tenant identity resolution; this return value is unused by any caller today (FastAPI dependency return values are discarded when used only in `dependencies=[...]`, not `Depends()` bound to a parameter).
+- ✅ **FIXED** — the comparison now reads `settings.VELAR_API_KEY` instead of a hardcoded literal. Rotating `VELAR_API_KEY` in `.env`/deployment config now actually takes effect. See [16 · Known Issues §16.2](./16-known-issues-tech-debt.md#162-high-previously-security--correctness-with-real-user-impact--all-fixed).
+- On success, the function still returns a **hardcoded identity string** `"developer_id_789"` — there is no real multi-tenant identity resolution; this return value is unused by any caller today (FastAPI dependency return values are discarded when used only in `dependencies=[...]`, not `Depends()` bound to a parameter). This is a genuine remaining limitation (multi-tenancy is on the roadmap), not something silently fixed here.
 - The docstring claims "In production, this routes through Redis for sub-millisecond validation" — no Redis client, dependency, or configuration exists anywhere in this repository.
 
 ## 4.4 Rate limiting — `core/rate_limiter.py`
 
 Uses **SlowAPI** (`slowapi.Limiter`), keyed by `get_remote_address` (client IP). Global defaults: `1000/day`, `100/minute`. `setup_rate_limiting(app)` attaches the limiter to `app.state.limiter` and registers `RateLimitExceeded` → `_rate_limit_exceeded_handler`.
 
-The only per-route override in the codebase is on the inline (unreachable — see [02 · API Reference](./02-api-reference.md#22-system-endpoints)) `public_categorize` stub: `@limiter.limit("50/minute")`. Since that route is shadowed by the router-mounted `/v1/categorize`, **no endpoint in the live routing table currently has a tighter-than-default rate limit** — everything effectively runs at 100/minute per IP.
+✅ **FIXED** — the `@limiter.limit("50/minute")` override now lives on the real `POST /v1/categorize` handler in `routers/v1.py` (the pydantic body parameter was renamed from `request` to `payload` so a real `Request` object could be bound to the parameter name SlowAPI requires). Previously this decorator only existed on a dead-code duplicate route in `app.py` that never received traffic, so no live endpoint had a tighter-than-default limit. Verified: 55 rapid calls return `429` once the limit is hit.
 
-`test_api.py::test_rate_limiter_defense` is marked `xfail` with the reason "TestClient bypasses actual ASGI network layer, preventing IP-based rate limiting in some configurations" — rate limiting is acknowledged by the team as untested in CI.
+`test_api.py::test_rate_limiter_defense` is no longer `xfail` — it passes for real now that the limit is actually enforced on a live route, and resets `limiter` state afterward so its 55 hits don't count against the shared-fixture budget of other tests in the same module.
 
 ## 4.5 Database clients
 

@@ -26,8 +26,9 @@ All seven are declared in `database/mongo.py::MongoDB.connect`. Field lists belo
 | Field | Type | Written by | Notes |
 |---|---|---|---|
 | `_id` | ObjectId | auto | |
-| `transaction_id` | string | `feedback/feedback_service.py` (unreachable — router unmounted) | Free-text, not validated against any real transaction's `_id` |
-| `prediction` | string | same | **Holds a category value** (e.g. `"Unknown"`, `"Travel"`) — see §2 for why this is read incorrectly elsewhere |
+| `transaction_id` | string | `feedback/feedback_service.py` (router now mounted at `/v1/feedback`) | Should be the `transaction_id` returned by `POST /v1/categorize`; not database-constrained |
+| `prediction` | string | same | Holds a category value (e.g. `"Unknown"`, `"Travel"`) |
+| `merchant_name` | string \| null | same | ✅ Added — resolved by looking up `transaction_id` in `transactions`; this is what §2's fix uses instead of `prediction` |
 | `corrected_category` | string | same | |
 | `confidence` | float | same | |
 | `is_correction` | bool | same | `prediction != corrected_category` |
@@ -74,9 +75,9 @@ All seven are declared in `database/mongo.py::MongoDB.connect`. Field lists belo
 | Field | Type | Written by | Notes |
 |---|---|---|---|
 | `_id` | ObjectId | auto | |
-| `transaction_id` | string | `feedback/retraining_queue.py` (unreachable) | |
+| `transaction_id` | string | `feedback/retraining_queue.py` (reachable via `/v1/feedback/`) | |
 | `verified_category`, `failed_prediction` | string | same | |
-| `status` | string | same | `"pending"` → `"processing"` (bulk `update_many`); **never transitions to `"completed"` or anything terminal** — the actual training-launch step was never implemented |
+| `status` | string | same | `"pending"` → `"processing"` (bulk `update_many`); **never transitions to `"completed"` or anything terminal** — launching a real training job still requires a task queue (Celery), which doesn't exist in this repo yet; see [16 · Known Issues §16.5](./16-known-issues-tech-debt.md#165-whats-intentionally-still-open-productinfra-decisions-not-bugs) |
 | `added_at` | datetime | same | |
 | `processing_started_at` | datetime | same | Only set on the `"pending" → "processing"` transition |
 
@@ -151,22 +152,15 @@ erDiagram
 
 These two collections both claim to represent "canonical merchant identity," but **no code anywhere reads or writes both**. `services/merchant_resolver.py` only ever touches `merchants`. `memory/memory_manager.py` and `repositories/profile_repository.py` only ever touch `merchant_profiles`. A merchant resolved via `/v1/resolve` (found in `merchants`) is never automatically registered in `merchant_profiles`, and vice versa — a caller has to separately call `/memory/update` with the same canonical name to create the trust-tracking side of the same real-world entity. There is no shared identity, no cross-reference field, and no synchronization mechanism between them.
 
-### 2.2 The `feedback.prediction` field mismatch — a real, previously undocumented bug
+### 2.2 The `feedback.prediction` field mismatch — ✅ FIXED
 
-This is a genuine data-integrity defect, verified directly against the source:
+This was a genuine data-integrity defect: `feedback/feedback_service.py::process_feedback` stored `"prediction": original_prediction` (a category string like `"Travel"`), while `rag/retriever.py` and `graphs/graph_builder.py` both queried/matched that same field as if it held a merchant name — meaning real feedback essentially never joined to the right merchant.
 
-- **Written as a category.** `feedback/feedback_service.py::process_feedback` stores `"prediction": original_prediction`, and both the request model and `test_api.py`'s own test data confirm this holds values like `"Unknown"` or `"Travel"` — i.e., a `TransactionCategory`-shaped string, not a merchant name.
-- **Read as if it were a merchant name, in two separate places.** `rag/retriever.py` line 30 runs `db.feedback.find({"prediction": name})`, where `name` is a *merchant* name (`"Swiggy"`, `"Zomato"`) coming from Milvus semantic search results. `graphs/graph_builder.py` does the same: `merchant_prediction = f.get("prediction")`, then checks `if merchant_prediction in self.graph` (where graph nodes are merchant canonical names) before wiring a `FEEDBACK_ON` edge.
+**Fix applied**: `process_feedback` now looks up the source transaction via `transaction_id` (which `POST /v1/categorize` returns) and writes a genuine `merchant_name` field on the feedback document. `rag/retriever.py` now runs `db.feedback.find({"merchant_name": name})`, and `graphs/graph_builder.py` now checks `f.get("merchant_name") in self.graph` before wiring a `FEEDBACK_ON` edge. `models/schemas.py::Feedback` was updated to include `merchant_name` (plus `is_correction` and `user_id`, which are also actually written but were previously missing from the schema). Verified end-to-end: a categorize → feedback round-trip correctly stores `"merchant_name": "Swiggy"` in the `feedback` collection. See [16 · Known Issues §16.2](./16-known-issues-tech-debt.md#162-high-previously-security--correctness-with-real-user-impact--all-fixed).
 
-**Consequence**: `feedback.prediction` values (`"Food"`, `"Travel"`, `"Unknown"`, etc.) essentially never coincide with merchant names (`"Swiggy"`, `"Uber"`, `"Netflix"`), so:
-1. `rag/retriever.py`'s `recent_feedback` list is, in practice, **almost always empty** for any real merchant, even when directly relevant feedback records exist in the `feedback` collection — the RAG explanation pipeline's `<HUMAN_CORRECTIONS>` context is silently starved of data it should have access to.
-2. `graphs/graph_builder.py`'s `Feedback_*` nodes almost never attach to any real merchant node — nearly all feedback data is silently dropped from the knowledge graph, since the equality check `merchant_prediction in self.graph` will only pass by coincidence (a merchant literally named `"Travel"` or `"Food"`, which doesn't exist in this dataset).
+### 2.3 `feedback.transaction_id` is now a real, resolvable reference
 
-**Fix**: either add a genuine `merchant_name` field to the `feedback` document at write time (`feedback/feedback_service.py::process_feedback` would need a `merchant_name` parameter threaded in from whatever originally categorized the transaction), or change the two read sites to join through `transaction_id → transactions.merchant` instead of assuming `prediction` holds an entity name. This has been added to [16 · Known Issues](./16-known-issues-tech-debt.md#feedback-prediction-field-holds-a-category-not-a-merchant-name).
-
-### 2.3 `feedback.transaction_id` is an unvalidated soft reference
-
-Nothing checks that `transaction_id` corresponds to a real document in `transactions` — it's a free-text string supplied by whoever calls the (currently unmounted) feedback endpoint. `test_api.py`'s own test data uses fabricated values like `f"tx_{random.randint(1000, 9999)}"` with no corresponding transaction ever created. In a real system, this would be the equivalent of a foreign key with no constraint — silently allowed to point at nothing.
+`POST /v1/categorize` now returns the inserted transaction's `_id` (as `transaction_id`), so a real caller has a genuine id to pass to `POST /v1/feedback/` — previously `/v1/categorize` returned no id at all, and `test_api.py`'s own test data used fabricated values like `f"tx_{random.randint(1000, 9999)}"` with no corresponding transaction. There is still no database-level foreign-key constraint (Mongo doesn't enforce this natively, and `_lookup_merchant_name` simply returns `None` if the id doesn't resolve to a real transaction), but the intended real-world flow (categorize → capture `transaction_id` → feedback) now works end-to-end.
 
 ---
 
@@ -212,8 +206,9 @@ erDiagram
         string discovered_cluster "bolted on by a 2nd writer, not in Pydantic model"
     }
     FEEDBACK_COLLECTION {
-        string transaction_id "unvalidated soft ref to transactions._id"
-        string prediction "BUG: holds a category value but is queried as if it were a merchant name"
+        string transaction_id "soft ref to transactions._id, returned by POST /v1/categorize"
+        string prediction "holds a category value"
+        string merchant_name "resolved from transaction_id at write time; used for joins instead of prediction"
     }
     RETRAINING_QUEUE_COLLECTION {
         string transaction_id "copied from feedback.transaction_id"
@@ -270,7 +265,7 @@ The **write path** (Mongo → embed → Milvus) is fully built but has no orches
 | `merchant_profiles` | `canonical_name` (exact match, every read/write) | **Unique** index on `{canonical_name: 1}` — also enforces the entity-uniqueness constraint that's currently missing entirely (see §5) |
 | `behavior_patterns` | `merchant_name` (exact match, every read/write, and the `$lookup` foreign key) | **Unique** index on `{merchant_name: 1}` |
 | `merchants` | `aliases` (array containment, and `$regex` prefix match) | Multikey index on `{aliases: 1}` — helps the exact-match query directly; the `$regex` prefix query can also use this index efficiently *only* because the pattern is left-anchored (`^word`) with no leading wildcard |
-| `feedback` | `prediction` (buggy — see §2.2), `transaction_id` | Once the field-mismatch bug is fixed: index on whatever the corrected join key becomes (likely `merchant_name` or `transaction_id`) |
+| `feedback` | `merchant_name` (join key used by `rag/retriever.py` and `graphs/graph_builder.py` as of the §2.2 fix), `transaction_id` | Index on `{merchant_name: 1}` |
 | `retraining_queue` | `status` (`count_documents`, `update_many`) | Index on `{status: 1}` — cheap and directly speeds up the one query pattern this collection has |
 | `categories` | — | None needed — dead collection, candidate for removal entirely |
 

@@ -4,24 +4,7 @@ All Pydantic schemas live in `models/schemas.py`. Every model extends `CoreModel
 
 ## 3.1 Schema reference
 
-### `Merchant`
-| Field | Type | Notes |
-|---|---|---|
-| `id` | `str` (alias `_id`) | Mongo document id |
-| `name` | `str` | |
-| `aliases` | `list[str]` | default `[]` |
-| `created_at` | `datetime` | default now (UTC) |
-
-Note: the actual `merchants` collection documents written by `scripts/seed.py` use `canonical_name` + `aliases`, not `name` — this `Merchant` model does not match what's actually stored/queried against the `merchants` collection anywhere in the code (`services/merchant_resolver.py` queries `aliases` and reads back `canonical_name`, never validating against this model). `Merchant` appears to be unused/vestigial.
-
-### `Category`
-| Field | Type | Notes |
-|---|---|---|
-| `id` | `str` (alias `_id`) | |
-| `name` | `str` | |
-| `description` | `Optional[str]` | |
-
-Not referenced anywhere outside this file — the `categories` Mongo collection is created (`database/mongo.py`) but never read or written by any module.
+> ✅ **FIXED** — this section previously described `Merchant`/`Category` schema classes that were entirely unused (zero readers/writers) and matched neither the `merchants` collection's real shape nor anything else in the codebase. Both were removed. `Transaction` and `Feedback` are updated to match what's actually written. See [16 · Known Issues §16.4](./16-known-issues-tech-debt.md#164-low-previously-latent-bugs-unusedmismatched-code-cosmetic--fixed).
 
 ### `Transaction`
 | Field | Type | Notes |
@@ -31,28 +14,30 @@ Not referenced anywhere outside this file — the `categories` Mongo collection 
 | `merchant` | `Optional[str]` | |
 | `amount` | `float` | |
 | `category` | `Optional[str]` | |
-| `source` | `str` | |
+| `user_id` | `str` | default `"system_user"` — matches what `routers/v1.py` and `scripts/mock_seeder.py` actually write |
+| `is_mock` | `bool` | default `False` — matches `scripts/mock_seeder.py`'s flag |
 | `timestamp` | `datetime` | default now (UTC) |
 
-Documents actually inserted into `db.transactions` (by `scripts/mock_seeder.py`, and intended by `routers/v1.py`) use fields `user_id`, `merchant`, `category`, `amount`, `timestamp`, `is_mock` — `user_id` and `is_mock` are not part of this schema, and `source`/`raw_text` are not populated by the seeder. This model is not actually validated against inserted documents anywhere (Motor writes raw dicts).
+Previously had a required `source: str` field that nothing ever wrote, and was missing `user_id`/`is_mock`, which everything actually writes. This model still isn't validated against inserted documents anywhere (Motor writes raw dicts) — that's an intentional simplicity trade-off in this codebase, not a bug.
 
 ### `Feedback`
 | Field | Type | Notes |
 |---|---|---|
 | `id` | `Optional[str]` (alias `_id`) | |
 | `transaction_id` | `str` | |
-| `prediction` | `str` | |
+| `merchant_name` | `Optional[str]` | ✅ Added — resolved from `transaction_id` at write time; this is the join key `rag/retriever.py` and `graphs/graph_builder.py` now use instead of `prediction` |
+| `prediction` | `str` | holds a category value, e.g. `"Unknown"`, `"Travel"` |
 | `corrected_category` | `str` | |
 | `confidence` | `float` | |
+| `is_correction` | `bool` | default `False` |
+| `user_id` | `str` | default `"system_user"` |
 | `timestamp` | `datetime` | default now (UTC) |
 
-Matches the shape written by `feedback/feedback_service.py`'s `feedback_doc`, plus that doc also stores `is_correction` and `user_id`, which are not in this schema.
-
 ### `CategorizeRequest` / `CategorizeResponse`
-Request: `{ text: str }`. Response: `{ merchant: str, category: str, confidence: float }`. Used by `POST /v1/categorize`.
+Request: `{ text: str }`. Response: `{ merchant: str, category: str, confidence: float, transaction_id: Optional[str] }`. Used by `POST /v1/categorize`. `transaction_id` (the inserted Mongo document's stringified `_id`) was added so `POST /v1/feedback/` has something real to resolve a merchant from.
 
 ### `ResolutionResult`
-`{ raw_text, cleaned_text, canonical_merchant, confidence, is_resolved, resolution_method }`. `resolution_method` is a free-text field documented (not enum-enforced) as one of `exact_alias | substring | rule_engine | none` — note `services/merchant_resolver.py` never actually emits `"rule_engine"` as a value; only `exact_alias`, `substring`, and `none` are produced.
+`{ raw_text, cleaned_text, canonical_merchant, confidence, is_resolved, resolution_method }`. `resolution_method`'s docstring now reads `exact_alias | substring | none` (previously incorrectly listed `rule_engine` as a possible value, which `services/merchant_resolver.py` never actually emits).
 
 ### `MemoryState` (enum)
 `EPHEMERAL`, `TEMPORARY`, `PERMANENT`, `ARCHIVED` — see [05 · Ingestion, Resolution & Memory](./05-ingestion-resolution-memory.md) for the transition rules.
@@ -127,10 +112,10 @@ Defined in `milvus/insert_vectors.py::VectorStoreManager._ensure_collections`:
 | Index | HNSW, `metric_type=COSINE`, `M=8`, `efConstruction=200` |
 | Search params | `{"metric_type": "COSINE", "params": {"ef": 64}}` |
 
-The collection is created lazily on first `VectorStoreManager()` instantiation (module import time, in `milvus/insert_vectors.py`) if it doesn't already exist, then immediately `load_collection`'d into memory. The dimension `768` must exactly match the output size of whatever model `EMBED_MODEL` points to on the Ollama server — there is no runtime validation of this; a mismatch will surface as a Milvus insertion/search error at call time.
+The collection is created lazily via `vector_store.ensure_collections()`, called once from `app.py`'s `lifespan` right after `vector_db.connect()` succeeds — previously this happened at module-import time inside `VectorStoreManager.__init__`, which meant a briefly-unreachable Milvus could crash the whole app at import rather than just failing gracefully during startup (fixed, see [16 · Known Issues §16.3](./16-known-issues-tech-debt.md#163-medium-previously-disconnected-features-dead-code-silent-no-ops--fixed)). The dimension `768` must exactly match the output size of whatever model `EMBED_MODEL` points to on the Ollama server — there is no runtime validation of this; a mismatch will surface as a Milvus insertion/search error at call time.
 
 ## 3.4 Field/vocabulary inconsistencies worth knowing before writing new code
 
-- `TransactionCategory` enum vs. actual category strings in use (`merchant_aliases.json`, mock seeder) diverge — see §3.1 above and [Known Issues](./16-known-issues-tech-debt.md#category-vocabulary-mismatch).
-- `features/amount_features.py::extract_statistical_metrics` returns keys `avg`, `median`, `variance`, `std_dev`, `entropy` in its empty-input (`n == 0`) branch, but `avg_amount`, `median_amount`, `variance`, `std_dev`, `entropy_score` in its normal branch — callers (`behaviour/behavior_engine.py`) always index with the normal-branch key names, so an empty-amounts call would `KeyError`. In practice `behavior_engine` already guards against empty transaction sets before calling this, so the bug is latent rather than triggered on the current call path.
-- `features/temporal_features.py::extract_temporal_metrics` has the same shape: its empty-input branch returns `time_buckets`/`weekday_dist`, while the normal branch returns `time_bucket_distribution`/`weekday_distribution`. Same latent-bug caveat applies.
+- ✅ **FIXED** — `TransactionCategory` enum now includes `Subscription`, `Shopping`, and `Utility` alongside the original members, matching what `merchant_aliases.json` and `scripts/mock_seeder.py` actually produce (previously these were force-rejected to `Unknown` by `ConfidenceEngine.evaluate()`).
+- ✅ **FIXED** — `features/amount_features.py::extract_statistical_metrics`'s empty-input (`n == 0`) branch now returns the same key names as its normal branch (`avg_amount`, `median_amount`, `variance`, `std_dev`, `entropy_score`) instead of a differently-named set (`avg`, `median`, `entropy`) that would have `KeyError`'d if a caller without `behaviour/behavior_engine.py`'s empty-set guard ever hit this path.
+- ✅ **FIXED** — `features/temporal_features.py::extract_temporal_metrics` had the same shape mismatch; its empty-input branch now returns `time_bucket_distribution`/`weekday_distribution`, matching the normal branch (previously `time_buckets`/`weekday_dist`).

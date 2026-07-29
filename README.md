@@ -22,7 +22,7 @@ Velar ingests raw, messy transaction strings (UPI references, bank SMS, POS narr
 
 ## Project Status
 
-> **Pre-production / actively stabilizing.** Velar's architecture is genuinely ambitious — a 15-phase pipeline from ingestion through explainability — but several phases are disconnected from the live API surface, and a small number of endpoints have known, tracked defects. This README describes the project honestly: what works today, what's mocked, and what's planned. See [`docs/16-known-issues-tech-debt.md`](./docs/16-known-issues-tech-debt.md) for the complete, current defect list before deploying this anywhere important.
+> **Pre-production, stabilized.** Velar's architecture is genuinely ambitious — a 15-phase pipeline from ingestion through explainability. Every critical/high/medium defect previously tracked in [`docs/16-known-issues-tech-debt.md`](./docs/16-known-issues-tech-debt.md) has been fixed and verified (full test suite green against a real MongoDB instance, every module import-checked). What remains open is genuine feature work requiring an infrastructure decision — a task queue for retraining, an ML observability platform — not bugs; see that doc's §16.5 for the honest list of what's still ahead.
 
 ---
 
@@ -83,19 +83,19 @@ Velar's own code comments describe the system as a sequence of numbered **phases
 
 | Phase | Capability | Status |
 |---|---|---|
-| 1–3 | Rule-based categorization + noisy-text merchant resolution | Resolution works; categorize has a known bug |
+| 1–3 | Rule-based categorization + noisy-text merchant resolution | Working |
 | 4 | Memory / trust state machine (`EPHEMERAL → TEMPORARY → PERMANENT`) | Working |
 | 5 | Confidence wall (reject low-confidence predictions) | Working |
-| 6 | Behavioral feature extraction (amount, timing, frequency, periodicity) | Implemented, not auto-triggered |
-| 7 | Embeddings + Milvus vector search | Search path live; write/index path not wired up |
-| 8 | UMAP + HDBSCAN clustering | Two known bugs, currently non-functional |
-| 9 | Baseline ML model benchmarking | Script-only, synthetic data |
-| 10 | Human feedback + active learning queue | Implemented, but not mounted to the API |
-| 11 | LoRA fine-tuning (FinBERT) | Script-only, synthetic data |
+| 6 | Behavioral feature extraction (amount, timing, frequency, periodicity) | Working; trigger via `POST /v1/pipelines/behavior/run-all` |
+| 7 | Embeddings + Milvus vector search | Working; trigger via `POST /v1/pipelines/embeddings/sync` |
+| 8 | UMAP + HDBSCAN clustering | Fixed; trigger via `POST /v1/pipelines/clustering/run` |
+| 9 | Baseline ML model benchmarking | Script-only, synthetic data (real-data training is scoped future work) |
+| 10 | Human feedback + active learning queue | Mounted at `POST /v1/feedback/`; retraining executor still pending (needs a task queue) |
+| 11 | LoRA fine-tuning (FinBERT) | Script-only, synthetic data (real-data training is scoped future work) |
 | 12 | Grounded RAG explainability | Working end-to-end |
 | 13 | Spend analytics (patterns, subscriptions, trends, anomalies) | Working |
-| 14 | Observability / drift monitoring | Stubbed, not implemented |
-| 15 | API key authentication + rate limiting | Working (single shared key model) |
+| 14 | Observability / drift monitoring | Stubbed — needs Evidently/MLflow integration (infra decision, not a bug) |
+| 15 | API key authentication + rate limiting | Working — key is enforced, rate limit is live on `/v1/categorize` |
 
 **Full architecture deep-dive, sequence diagrams, and per-folder/per-file references live in [`/docs`](./docs/README.md).**
 
@@ -103,18 +103,20 @@ Velar's own code comments describe the system as a sequence of numbered **phases
 
 | Feature | Endpoint(s) | Status |
 |---|---|---|
-| Deterministic merchant/category rule matching | `POST /v1/categorize` | Known bug — see [Known Limitations](#known-limitations) |
+| Deterministic merchant/category rule matching | `POST /v1/categorize` | Stable |
 | Noisy UPI/bank text → canonical merchant resolution | `POST /v1/resolve` | Stable |
 | Confidence-wall prediction gating | `POST /v1/confidence/evaluate` | Stable |
 | Merchant trust/memory state tracking | `POST /memory/update`, `GET /memory/profile/{name}`, `GET /memory/state/{name}` | Stable |
 | Spend breakdown by category & top merchants | `GET /v1/analytics/patterns/*` | Stable |
-| Subscription detection | `GET /v1/analytics/subscriptions` | Needs behavioral backfill |
-| Real-time anomaly detection (z-score) | `POST /v1/analytics/anomaly/check` | Needs behavioral backfill |
-| Month-over-month trend | `GET /v1/analytics/trends/mom` | Partially mocked |
+| Subscription detection | `GET /v1/analytics/subscriptions` | Needs backfill — run `POST /v1/pipelines/behavior/run-all` first |
+| Real-time anomaly detection (z-score) | `POST /v1/analytics/anomaly/check` | Needs backfill — run `POST /v1/pipelines/behavior/run-all` first |
+| Month-over-month trend | `GET /v1/analytics/trends/mom` | Stable |
+| Human feedback + active learning queue | `POST /v1/feedback/` | Stable (retraining executor still pending — see Known Limitations) |
+| Batch pipelines (behavior, embeddings, decay, graph, clustering) | `POST /v1/pipelines/*` | Stable; manually triggered (no scheduler yet) |
 | Grounded, hallucination-resistant explanations | `POST /v1/explain` | Stable |
 | Health check & Prometheus metrics | `GET /health`, `GET /metrics` | Stable |
 
-Legend: **Stable** — working correctly and verified · **Needs backfill** — works, but depends on a manual step · **Partially mocked / Script-only** — experimental or not yet connected to real data · **Known bug** — tracked defect (see Known Limitations)
+Legend: **Stable** — working correctly and verified · **Needs backfill** — works, but depends on a manual step
 
 ## Tech Stack
 
@@ -191,15 +193,13 @@ python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 ```
 
-> **Important: do not rely on `pip install -r requirements.txt` alone.** The committed `requirements.txt` does not list this project's actual runtime dependencies (see [Known Limitations](#known-limitations)). Until it's corrected, install the real dependency set manually:
+`requirements.txt` now lists this project's actual runtime dependencies (previously it only listed unrelated OS/`apt`-level packages):
 
 ```bash
-pip install fastapi uvicorn "pydantic-settings" motor pymilvus slowapi \
-    prometheus-fastapi-instrumentator httpx scikit-learn umap-learn networkx \
-    pandas numpy lightgbm xgboost shap
-# Optional — only needed for the training/ scripts:
-pip install torch transformers peft datasets
+pip install -r requirements.txt
 ```
+
+The `torch`/`transformers`/`peft`/`datasets` fine-tuning stack is included but only needed if you plan to run `training/finetune.py`; it's a large download, so skip it if you're just running the API.
 
 ### Environment Variables
 
@@ -234,7 +234,7 @@ VELAR_API_KEY=your-secret-key-here
 | `OLLAMA_HOSTS` | No | — | Comma-separated failover list, tried in order at startup |
 | `EMBED_MODEL` | Yes | — | Ollama embedding model name |
 | `LLM_MODEL` | Yes | — | Ollama generation model name |
-| `VELAR_API_KEY` | Yes | — | Currently **not actually enforced** by the running app — see [Known Limitations](#known-limitations) |
+| `VELAR_API_KEY` | Yes | — | Enforced on every non-public route via `X-Velar-API-Key` |
 
 The app **fails fast at startup** if any required variable is missing — this is deliberate, not a bug.
 
@@ -298,7 +298,7 @@ docker run -p 8000:8000 --env-file .env velar-backend
 docker compose -f docker-compose_production.yaml up -d --build
 ```
 
-> **Important:** before deploying anywhere beyond local development, read [`docs/14-deployment-operations.md`](./docs/14-deployment-operations.md) in full — it documents several real gaps (the `requirements.txt` issue above, an env-var naming mismatch in the production compose file, and a credential-hygiene issue) that matter for a real deployment.
+> **Important:** `docker-compose_production.yaml` no longer contains a hardcoded credential or mismatched env var names — it now reads `MONGODB_URI`, `MILVUS_URI`, `EMBED_MODEL`, `LLM_MODEL`, and `VELAR_API_KEY` from a compose `.env` file or your CI/host secret store, matching `core/config.py` exactly. **If you have ever deployed the previous version of this file**, treat the credential it contained as compromised and rotate it on your MongoDB server — removing it from the tracked file does not undo its exposure in git history.
 
 ## API Overview
 
@@ -320,6 +320,13 @@ All endpoints except `/health` and `/metrics` require the header `X-Velar-API-Ke
 | `GET` | `/v1/analytics/trends/mom` | Month-over-month spend trend |
 | `POST` | `/v1/analytics/anomaly/check` | Real-time anomaly check |
 | `POST` | `/v1/explain` | Grounded RAG explanation |
+| `POST` | `/v1/feedback/` | Submit human correction feedback |
+| `POST` | `/v1/pipelines/behavior/run`, `/run-all` | Run behavior profiling (one merchant / all) |
+| `POST` | `/v1/pipelines/embeddings/sync` | Generate + store Milvus embeddings for behavior patterns |
+| `POST` | `/v1/pipelines/decay/sweep` | Archive stale (180+ day) merchant profiles |
+| `POST` | `/v1/pipelines/graph/build` | Rebuild the in-memory knowledge graph |
+| `GET` | `/v1/pipelines/graph/neighborhood/{merchant_name}` | Ego-graph around a merchant |
+| `POST` | `/v1/pipelines/clustering/run` | Run the UMAP + HDBSCAN discovery pipeline |
 | `POST` | `/v1/observability/drift/analyze` | Drift analysis (stub) |
 | `GET` | `/v1/observability/reports/latest` | Latest drift report (stub) |
 
@@ -354,24 +361,22 @@ $ curl -s -X POST http://localhost:8000/v1/resolve \
 
 ## Known Limitations
 
-Velar is transparent about its own maturity. The full, continuously-maintained list — with file/line-level detail and suggested fixes — lives in [`docs/16-known-issues-tech-debt.md`](./docs/16-known-issues-tech-debt.md). Headlines:
+Velar is transparent about its own maturity. The full, continuously-maintained list lives in [`docs/16-known-issues-tech-debt.md`](./docs/16-known-issues-tech-debt.md) — every previously-tracked defect there has been fixed and verified. What's left is genuine feature work requiring an infrastructure decision, not bugs:
 
-- **`POST /v1/categorize` currently returns a 500 on every call** — a bug in the request-handling code, not a configuration issue.
-- **`requirements.txt` does not list this project's actual dependencies** — see [Installation](#installation) for the correct package list until this is fixed.
-- **`VELAR_API_KEY` is not actually enforced** — the auth check currently compares against a hardcoded value, not your configured key.
-- **Several pipeline phases are implemented but not wired to a scheduler or the live API**, including behavior profiling, clustering, decay sweeps, and the feedback/active-learning loop — meaning subscription/anomaly detection needs a manual backfill step, and `POST /v1/feedback/` isn't reachable yet.
+- **The retraining queue has no executor.** Corrections accumulate and get marked `"processing"` once the threshold is hit, but nothing actually retrains a model yet — that needs a task queue (Celery + broker), which is an infra decision for whoever operates this.
+- **`training/train.py` and `training/finetune.py` train on synthetic data**, not real feedback/transaction data — their docstrings describe the intended MongoDB queries, but that data-assembly pipeline isn't built yet.
+- **Observability endpoints are stubs** — no Evidently AI / MLflow integration exists yet.
 - **No caching layer and no database indexes exist yet** — fine for development, a real constraint before any production load.
+- **The new `/v1/pipelines/*` endpoints are manually triggered** — nothing schedules them yet (no cron/Celery beat in this repo).
 
 ## Roadmap
 
-- [ ] Fix `POST /v1/categorize` and correct `requirements.txt`
-- [ ] Wire real authentication (`VELAR_API_KEY`) and add per-caller authorization
+- [ ] Stand up a task queue (Celery + broker) and wire the retraining executor to it
+- [ ] Build a real MongoDB-backed training data pipeline for `training/train.py` and `training/finetune.py`
 - [ ] Add MongoDB indexes on every actively-queried field
-- [ ] Mount the feedback/active-learning router and connect it to a real retraining trigger
-- [ ] Automate the behavior-profiling and embedding-generation pipelines (currently manual/never-run)
-- [ ] Fix the Phase 8 clustering pipeline (two known bugs)
+- [ ] Schedule `/v1/pipelines/*` (behavior, embeddings, decay, graph, clustering) on a cron/Celery beat instead of manual triggers
+- [ ] Wire real Evidently AI / MLflow observability instead of the current stubs
 - [ ] Add a CI pipeline (lint, type-check, test) and a LICENSE
-- [ ] Replace the mocked month-over-month trend calculation with a real query
 - [ ] Introduce a caching layer for repeated embedding/analytics queries
 - [ ] Real multi-tenancy: per-user data scoping instead of a hardcoded test user
 

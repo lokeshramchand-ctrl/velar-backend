@@ -6,67 +6,65 @@
 ## URL
 `/v1/feedback/`
 
-## ⚠ Reachability status
-**This endpoint is fully implemented but is currently unreachable over HTTP.** `feedback/api_router.py` defines the router correctly, but `app.py` never imports `feedback` and never calls `app.include_router(feedback.router, ...)`. Any request to this path against the real running application receives a plain `404 Not Found` from Starlette's default "no matching route" handling — not the 404 documented for other endpoints in this system, but a generic routing-level 404 with no custom body. Everything below describes what this endpoint does **if and when it is mounted**, since the code itself is correct and complete.
+## ✅ Reachability status
+**This endpoint is mounted and reachable.** `app.py` now imports `feedback.router` and calls `app.include_router(feedback_router, dependencies=[Depends(validate_api_key)])`, matching the same auth pattern as every other router. Previously `app.py` never imported `feedback` at all and any request here received a generic `404` — see [16 · Known Issues §16.3](../16-known-issues-tech-debt.md#163-medium-previously-disconnected-features-dead-code-silent-no-ops--fixed).
 
 ## Purpose
-Accepts human feedback on a model prediction (correction or confirmation), persists it, and — for actual corrections — checks in the background whether enough corrections have accumulated to justify triggering a retraining run.
+Accepts human feedback on a model prediction (correction or confirmation), resolves and persists the merchant it's about, and — for actual corrections — checks in the background whether enough corrections have accumulated to justify triggering a retraining run.
 
 ## Authentication
-**Would require** `X-Velar-API-Key: velar_test_key_123`, if mounted following the same pattern as every other router (`dependencies=[Depends(validate_api_key)]` at `include_router` time) — but since it is never mounted at all, no auth dependency is currently attached to this path in the running application either.
+**Required.** `X-Velar-API-Key: <settings.VELAR_API_KEY>`, enforced via `Depends(validate_api_key)`.
 
 ## Headers
-| Header | Required (once mounted) | Value |
+| Header | Required | Value |
 |---|---|---|
-| `X-Velar-API-Key` | Yes | `velar_test_key_123` |
+| `X-Velar-API-Key` | Yes | Your configured `VELAR_API_KEY` |
 | `Content-Type` | Yes | `application/json` |
 
 ## Request body
 ```json
 {
-  "transaction_id": "tx_1234",
+  "transaction_id": "666f6f2d6261722d71757578",
   "original_prediction": "Unknown",
   "corrected_category": "Travel",
   "confidence": 0.40
 }
 ```
-Validated against the router-local `FeedbackRequest` model (`feedback/api_router.py`): all four fields required.
+Validated against the router-local `FeedbackRequest` model (`feedback/api_router.py`): all four fields required. `transaction_id` should be the id returned by `POST /v1/categorize` — `process_feedback` uses it to look up the transaction's `merchant` field.
 
 ## Validation
-Type-level only — no constraint that `original_prediction`/`corrected_category` be valid `TransactionCategory` enum values, and `confidence` has no `[0, 1]` bound.
+Type-level only — no constraint that `original_prediction`/`corrected_category` be valid `TransactionCategory` enum values, and `confidence` has no `[0, 1]` bound. `transaction_id` isn't validated as a real `ObjectId` before use — an unresolvable id just results in `merchant_name: null` being stored, not an error.
 
 ## Response
-**Intended** `200 OK`:
+`200 OK`:
 ```json
 { "status": "success", "feedback_recorded": true }
 ```
 `feedback_recorded` reflects whether `original_prediction != corrected_category` (i.e., whether this was an actual correction versus a confirmation).
 
-**Actual**, in the current build: `404 Not Found` (generic Starlette routing 404, no JSON body guaranteed) for every request, regardless of content.
-
 ## Error codes
-| Code | When (as designed) |
+| Code | When |
 |---|---|
 | `401` | Missing API key |
 | `403` | Wrong API key |
 | `422` | Any of the four required fields missing or wrong type |
-| **`404`** | **Actual, current behavior for every request** — the route simply doesn't exist in the running application's route table |
 
 ## Internal execution flow
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant Ctl as feedback/api_router.py::submit_feedback (unmounted)
+    participant Ctl as feedback/api_router.py::submit_feedback
     participant FS as feedback.feedback_service.feedback_service
-    participant Mongo as MongoDB (feedback, retraining_queue)
+    participant Mongo as MongoDB (transactions, feedback, retraining_queue)
     participant BG as FastAPI BackgroundTasks
     participant RQ as feedback.retraining_queue.retraining_manager
 
     C->>Ctl: POST /v1/feedback/ {transaction_id, original_prediction, corrected_category, confidence}
-    Note over Ctl: In the real app, this never executes — 404 before reaching here
     Ctl->>FS: process_feedback(...)
+    FS->>Mongo: transactions.find_one({"_id": ObjectId(transaction_id)}, {"merchant": 1})
+    Mongo-->>FS: merchant_name (or None if not found)
     FS->>FS: is_correction = original_prediction != corrected_category
-    FS->>Mongo: feedback.insert_one(feedback_doc)
+    FS->>Mongo: feedback.insert_one({..., merchant_name, ...})
     alt is_correction
         FS->>Mongo: retraining_queue.insert_one(queue_doc, status="pending")
     end
@@ -80,7 +78,7 @@ sequenceDiagram
     RQ->>Mongo: count_documents(retraining_queue, status="pending")
     alt pending_count >= 100
         RQ->>Mongo: update_many(status: pending -> processing)
-        Note over RQ: TODO in source: actual training launch never implemented
+        Note over RQ: Still a TODO in source — actual training launch requires a task queue (Celery), not implemented; see 16 · Known Issues §16.5
     end
 ```
 
@@ -88,33 +86,32 @@ sequenceDiagram
 `submit_feedback(request: FeedbackRequest, background_tasks: BackgroundTasks)` in `feedback/api_router.py`.
 
 ## Service
-`feedback.feedback_service.feedback_service.process_feedback(...)` (persistence), and — deferred to a background task — `feedback.retraining_queue.retraining_manager.trigger_retraining_if_needed()` (threshold check).
+`feedback.feedback_service.feedback_service.process_feedback(...)` — now also resolves `merchant_name` via `_lookup_merchant_name(transaction_id)` before writing — and, deferred to a background task, `feedback.retraining_queue.retraining_manager.trigger_retraining_if_needed()` (threshold check).
 
 ## Database queries
-- `db.feedback.insert_one(feedback_doc)` — always, one write.
+- `db.transactions.find_one({"_id": ObjectId(transaction_id)}, {"merchant": 1})` — resolves the merchant name; returns `None` gracefully if `transaction_id` isn't a valid/resolvable `ObjectId`.
+- `db.feedback.insert_one(feedback_doc)` — always, one write, now including `merchant_name`.
 - `db.retraining_queue.insert_one(queue_doc)` — only if `is_correction` is true.
 - (Background, deferred) `db.retraining_queue.count_documents({"status": "pending"})` and, conditionally, `db.retraining_queue.update_many({"status": "pending"}, {"$set": {"status": "processing", ...}})`.
 
 ## Example request
 ```bash
 curl -s -X POST http://localhost:8000/v1/feedback/ \
-  -H "X-Velar-API-Key: velar_test_key_123" \
+  -H "X-Velar-API-Key: $VELAR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"transaction_id": "tx_1234", "original_prediction": "Unknown", "corrected_category": "Travel", "confidence": 0.40}'
+  -d '{"transaction_id": "666f6f2d6261722d71757578", "original_prediction": "Unknown", "corrected_category": "Travel", "confidence": 0.40}'
 ```
 
 ## Example response
-**As designed**:
-```json
-{ "status": "success", "feedback_recorded": true }
-```
-**Actual, current behavior**:
 ```http
-HTTP/1.1 404 Not Found
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{ "status": "success", "feedback_recorded": true }
 ```
 
 ## Interview questions
-- "This code is fully correct and would work exactly as designed — so why doesn't it?" (`app.py` never imports the `feedback` package and never calls `app.include_router(feedback.router, ...)` — a pure wiring omission, not a code defect. This is the kind of gap that's invisible from reading `feedback/api_router.py` alone; you have to check `app.py`'s router-inclusion list to notice it.)
-- "What's the exact one-line-equivalent fix to make this reachable?" (Add `from feedback import api_router as feedback` to `app.py`'s imports and `app.include_router(feedback.router, dependencies=[Depends(validate_api_key)])` alongside the other five `include_router`/route declarations, matching the existing auth pattern exactly.)
-- "Why does `test_api.py::test_feedback_triggers_retraining_queue` pass in CI despite this endpoint being completely unreachable?" (Its assertion is nested inside `if response.status_code == 200:` — since the real response is 404, the `if` block's body never executes, and the test passes trivially without ever verifying the feature actually works.)
+- "This was unreachable before — what was the exact fix?" (`app.py` never imported the `feedback` package or called `app.include_router(feedback.router, ...)` — a pure wiring omission. Fixed by importing `feedback.router` as `feedback_router` and including it alongside the other routers with the same `validate_api_key` dependency.)
+- "Why does `merchant_name` exist on the feedback document now, when it didn't before?" (Previously `feedback.prediction` held a *category* string, but `rag/retriever.py` and `graphs/graph_builder.py` both queried/matched that field as if it held a *merchant* name — so real feedback essentially never joined correctly. `process_feedback` now looks up the transaction via `transaction_id` and stores its actual `merchant` as `merchant_name`, and both read sites now query on that field instead. See [18 · Database Analysis §2.2](../18-database-analysis.md#22-the-feedbackprediction-field-mismatch--fixed).)
 - "Why use `BackgroundTasks` for the retraining-threshold check instead of awaiting it directly before responding?" (The caller submitting feedback doesn't need to wait for — or know about — whether their submission happened to cross a global retraining threshold; deferring it keeps the response fast and decouples an unrelated batch-processing concern from the individual feedback-submission request.)
+- "The retraining queue flips records to `\"processing\"` once the threshold is hit — then what?" (Nothing, currently. Actually launching `BaselineTrainer().run_benchmarks()` requires a task queue like Celery, which doesn't exist in this repo. Calling it synchronously from a background task would block on a CPU-heavy job and would still only train on synthetic data, not real feedback — that's a scoped feature to build, not a bug to fix. See [16 · Known Issues §16.5](../16-known-issues-tech-debt.md#165-whats-intentionally-still-open-productinfra-decisions-not-bugs).)

@@ -1,5 +1,7 @@
 # File-by-File Reference
 
+> **Note on currency**: these pages were written against an earlier snapshot of the codebase and may describe bugs (import errors, unmounted routers, hardcoded values, etc.) that have since been fixed. [`docs/16-known-issues-tech-debt.md`](../16-known-issues-tech-debt.md) is the current, up-to-date source of truth for what's fixed vs. still open — check it before treating any specific defect described below as still present.
+
 Deep-dive documentation for every `.py` and `.sh` source file in the repository (49 files), mirroring the repo's own directory structure. Each page covers: purpose, responsibilities, imports (with what each is used for), exports, execution flow, every function/method explained in plain English, classes, interfaces, hooks, utilities, dependencies, side effects, performance considerations, and interview questions.
 
 Not covered here (not executable source): `merchant_aliases.json` (data — see [03 · Data Model](../03-data-model.md)), `Dockerfile`/`docker-compose_*.yaml`/`requirements*.txt` (deployment config — see [14 · Deployment & Operations](../14-deployment-operations.md)), `README.md`.

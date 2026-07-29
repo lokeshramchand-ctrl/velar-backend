@@ -5,7 +5,7 @@ class AmountExtractor:
     def extract_statistical_metrics(self, amounts: List[float]) -> Dict:
         n = len(amounts)
         if n == 0:
-            return {"avg": 0.0, "median": 0.0, "variance": 0.0, "std_dev": 0.0, "entropy": 0.0}
+            return {"avg_amount": 0.0, "median_amount": 0.0, "variance": 0.0, "std_dev": 0.0, "entropy_score": 0.0}
             
         mean_val = sum(amounts) / n
         

@@ -4,6 +4,8 @@ from core.config import settings
 
 logger = logging.getLogger(__name__)
 
+_resolved_host: str | None = None
+
 
 def resolve_ollama_host(hosts: list[str]) -> str:
     """
@@ -30,12 +32,23 @@ def resolve_ollama_host(hosts: list[str]) -> str:
     raise RuntimeError("All OLLAMA_HOSTS failed. Cannot initialize Ollama.")
 
 
-# Initialize constants from settings
-OLLAMA_HOST = (
-    settings.OLLAMA_URI
-    if settings.OLLAMA_URI
-    else resolve_ollama_host(settings.ollama_hosts_list)
-)
+def get_ollama_host() -> str:
+    """
+    Resolves the active Ollama host, caching the result after the first call.
+    Deliberately NOT resolved at import time: a health-checking network call
+    (resolve_ollama_host) that raises on failure would otherwise crash the whole
+    app at startup if Ollama happens to be briefly unreachable, instead of just
+    the RAG/embedding features that actually depend on it.
+    """
+    global _resolved_host
+    if _resolved_host is None:
+        _resolved_host = (
+            settings.OLLAMA_URI
+            if settings.OLLAMA_URI
+            else resolve_ollama_host(settings.ollama_hosts_list)
+        )
+    return _resolved_host
+
 
 EMBED_MODEL = settings.EMBED_MODEL
 LLM_MODEL = settings.LLM_MODEL

@@ -62,16 +62,16 @@ class KnowledgeGraphBuilder:
         # 4. Map Human Feedback Nodes (Phase 10 integration)
         for f in feedbacks:
             tx_id = str(f.get("transaction_id", "unknown"))
-            merchant_prediction = f.get("prediction")
-            
-            if merchant_prediction in self.graph:
+            merchant_name = f.get("merchant_name")
+
+            if merchant_name in self.graph:
                 feedback_node_id = f"Feedback_{tx_id}"
                 self.graph.add_node(
-                    feedback_node_id, 
-                    node_type="Feedback", 
+                    feedback_node_id,
+                    node_type="Feedback",
                     is_correction=f.get("is_correction")
                 )
-                self.graph.add_edge(feedback_node_id, merchant_prediction, relation="FEEDBACK_ON")
+                self.graph.add_edge(feedback_node_id, merchant_name, relation="FEEDBACK_ON")
 
         # Calculate Graph Topology Metrics
         metrics = {

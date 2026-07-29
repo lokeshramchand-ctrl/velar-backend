@@ -11,7 +11,11 @@ class TemporalExtractor:
 
     def extract_temporal_metrics(self, timestamps: List[datetime]) -> Dict:
         if not timestamps:
-            return {"preferred_hour": 12, "time_buckets": {}, "weekday_dist": [0.0]*7}
+            return {
+                "preferred_hour": 12,
+                "time_bucket_distribution": {},
+                "weekday_distribution": [0.0] * 7
+            }
             
         hours = [t.hour for t in timestamps]
         preferred_hour = max(set(hours), key=hours.count)

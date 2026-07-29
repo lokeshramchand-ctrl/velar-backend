@@ -45,20 +45,17 @@ flowchart TD
 - **Metrics** (`_calculate_metrics`): silhouette score and Davies-Bouldin index, computed only over non-noise (`label != -1`) points, and only if at least 2 clusters exist.
 - **Persistence** (`_persist_clusters`): bulk `UpdateOne` upserts writing `discovered_cluster: "cluster_{label}"` (or `"noise"` for label `-1`) into `behavior_patterns`, keyed by `merchant_name`. This is how `graphs/graph_builder.py` later reads `discovered_cluster` to build `BELONGS_TO` edges.
 
-### Bug: `sklearn.metrics` import
-`clustering/cluster_engine.py` imports:
-```python
-from sklearn.metrics import silhouette_score, davies_bouldin_index
-```
-Scikit-learn's actual function is named **`davies_bouldin_score`**, not `davies_bouldin_index` — no such name exists in `sklearn.metrics`. This import will raise `ImportError` the moment `clustering/cluster_engine.py` is loaded, which means `cluster_engine` (and therefore the entire Phase 8 discovery pipeline) **cannot currently be imported or run**. See [Known Issues](./16-known-issues-tech-debt.md#davies-bouldin-import-error). Since nothing in the live HTTP surface imports `clustering.cluster_engine` today (it's only reachable by direct script/REPL invocation per [01 · Architecture §1.9](./01-architecture.md#19-what-is-not-wired-into-the-http-surface)), this does not currently break `app.py` startup — but it does mean Phase 8 is non-functional as committed.
+### ✅ FIXED — `sklearn.metrics` import
+`clustering/cluster_engine.py` now imports `davies_bouldin_score` (scikit-learn's actual export — `davies_bouldin_index` never existed). `cluster_engine` imports and runs correctly; verified with `umap-learn` + `scikit-learn` installed. See [Known Issues §16.1](./16-known-issues-tech-debt.md#161-critical-previously-broke-the-application-or-a-whole-feature--all-fixed).
 
-### Second bug, currently masked by the import error: nonexistent `behavior_collection` attribute
-`run_discovery_pipeline` fetches vectors via:
-```python
-results = vector_store.behavior_collection.query(expr="id != ''", output_fields=["merchant_name", "embedding"])
-```
-But `VectorStoreManager` (`milvus/insert_vectors.py`) never defines a `behavior_collection` attribute — it exposes `self.client` (the `MilvusClient`) and `self.behavior_col_name` (a plain string). This line would raise `AttributeError: 'VectorStoreManager' object has no attribute 'behavior_collection'` the moment it executed. Fixing only the `davies_bouldin_index` import would surface this as the very next failure — both need correcting together (the call should be something like `vector_store.client.query(collection_name=vector_store.behavior_col_name, expr="id != ''", output_fields=[...])`).
+### ✅ FIXED — nonexistent `behavior_collection` attribute
+`run_discovery_pipeline` now fetches vectors via `vector_store.client.query(collection_name=vector_store.behavior_col_name, filter="id != ''", output_fields=["merchant_name", "embedding"])` instead of the nonexistent `vector_store.behavior_collection.query(...)`.
+
+### ✅ Also fixed while touching this file: Milvus client consolidation
+`VectorStoreManager` (`milvus/insert_vectors.py`) no longer opens its own `MilvusClient` connection at import time — it now delegates to the single client owned by `database.milvus.vector_db` via a `client` property, with a new `ensure_collections()` called once from the app `lifespan`. This also closes a real stability gap: the old eager-connect-at-import made a **blocking network call at module-import time with no retry**, so importing this module while Milvus was briefly unreachable used to crash the entire app, not just this feature. See [Known Issues §16.3](./16-known-issues-tech-debt.md#163-medium-previously-disconnected-features-dead-code-silent-no-ops--fixed).
+
+Phase 8 is now reachable via `POST /v1/pipelines/clustering/run` (see [02 · API Reference §2.9](./02-api-reference.md#29-batch-pipelines-routerspipelinespy-prefix-v1pipelines)), imported lazily inside that handler so a missing/broken `scikit-learn`/`umap-learn` install only breaks that one endpoint, not app startup.
 
 ## 7.5 Why this matters for RAG and analytics
 
-The vector-search **query** path (§7.3, used by `/v1/explain`) depends entirely on the `behavior_vectors` Milvus collection already being populated — but as shown above, the **write** path (embedding generation → `vectorizer` → `insert_behavior_vector`) has no orchestrating caller anywhere in the codebase. In a freshly deployed environment with no manual data-loading step, `/v1/explain` will always retrieve zero hits and short-circuit to `"NO_CONTEXT_AVAILABLE"` (see [10 · RAG & Explainability](./10-rag-explainability.md)).
+The vector-search **query** path (§7.3, used by `/v1/explain`) depends entirely on the `behavior_vectors` Milvus collection already being populated. The **write** path (embedding generation → `vectorizer` → `insert_behavior_vector`) previously had no orchestrating caller anywhere in the codebase — it's now reachable via `POST /v1/pipelines/embeddings/sync`, which iterates every stored `behavior_patterns` document, generates its embedding, and upserts it into Milvus. In a freshly deployed environment, run `POST /v1/pipelines/behavior/run-all` then `POST /v1/pipelines/embeddings/sync` before expecting `/v1/explain` to retrieve real context — see [10 · RAG & Explainability](./10-rag-explainability.md).

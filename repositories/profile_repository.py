@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from database.mongo import db
 from models.schemas import MerchantProfile, MemoryState
 

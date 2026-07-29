@@ -2,13 +2,12 @@ import httpx
 import logging
 import json
 from typing import Dict, Any
-from core.ollama_client import OLLAMA_HOST, LLM_MODEL
+from core.ollama_client import get_ollama_host, LLM_MODEL
 
 logger = logging.getLogger(__name__)
 
 class ExplanationGenerator:
     def __init__(self):
-        self.api_url = f"{OLLAMA_HOST}/api/generate"
         self.system_prompt = """
 You are the Velar Transaction Intelligence Reasoning Engine.
 Your ONLY purpose is to explain transaction categorizations or recommend financial insights based STRICTLY on the provided XML context. 
@@ -40,7 +39,8 @@ RULES:
 
         async with httpx.AsyncClient() as client:
             try:
-                response = await client.post(self.api_url, json=payload, timeout=30.0)
+                api_url = f"{get_ollama_host()}/api/generate"
+                response = await client.post(api_url, json=payload, timeout=30.0)
                 response.raise_for_status()
                 data = response.json()
                 

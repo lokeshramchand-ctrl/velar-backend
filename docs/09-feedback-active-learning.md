@@ -1,6 +1,6 @@
 # 09 · Feedback & Active Learning (Phase 10)
 
-> ⚠ **This entire subsystem is unreachable over HTTP.** `feedback/api_router.py` defines `router = APIRouter(prefix="/v1/feedback", ...)` with a fully working `POST /` handler, but `app.py` never calls `app.include_router(feedback.router)` — `feedback` is not even imported in `app.py`. This document describes what the code does when invoked directly (e.g., in tests or a future wiring), not what currently happens over the network. See [Known Issues](./16-known-issues-tech-debt.md#feedback-router-not-mounted).
+> ✅ **FIXED — this subsystem is now mounted and reachable over HTTP.** `app.py` imports `feedback.router` and calls `app.include_router(feedback_router, dependencies=[Depends(validate_api_key)])`. Additionally, `process_feedback` now resolves and stores a real `merchant_name` field (by looking up the transaction via `transaction_id`), fixing the `feedback.prediction`-holds-a-category bug described in [18 · Database Analysis §2.2](./18-database-analysis.md#22-the-feedbackprediction-field-mismatch--a-real-previously-undocumented-bug) — `rag/retriever.py` and `graphs/graph_builder.py` now both query/match on `merchant_name`. See [Known Issues §16.2–16.3](./16-known-issues-tech-debt.md).
 
 ## 9.1 Intended request flow
 

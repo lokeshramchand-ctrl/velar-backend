@@ -2,7 +2,7 @@
 
 All endpoints are served by the single FastAPI app defined in `app.py`. Base path prefixes come from each `APIRouter(prefix=...)` declaration; there is no global `/api` prefix.
 
-**Authentication**: unless noted otherwise, every endpoint requires the header `X-Velar-API-Key`. The only accepted value in the current implementation is the literal string `velar_test_key_123` (see `core/security.py` and [Known Issues](./16-known-issues-tech-debt.md#hardcoded-api-key)).
+**Authentication**: unless noted otherwise, every endpoint requires the header `X-Velar-API-Key`, checked against `settings.VELAR_API_KEY` (see `core/security.py`). Previously this compared against a hardcoded literal regardless of configuration — fixed, see [Known Issues §16.2](./16-known-issues-tech-debt.md#162-high-previously-security--correctness-with-real-user-impact--all-fixed).
 
 ## 2.1 Endpoint index
 
@@ -10,8 +10,7 @@ All endpoints are served by the single FastAPI app defined in `app.py`. Base pat
 |---|---|---|---|---|---|
 | GET | `/health` | `app.py` | None | global (1000/day, 100/min) | Liveness + dependency status (Mongo, Milvus, Ollama) |
 | GET | `/metrics` | `app.py` (Instrumentator) | None | global | Prometheus scrape endpoint |
-| POST | `/v1/categorize` | `routers/v1.py` (wins route match) | Required | global | Rule-engine categorize + persist — **broken at runtime**, see below |
-| POST | `/v1/categorize` | `app.py` (inline stub) | Required | 50/min | Unreachable dead code — shadowed by the router above |
+| POST | `/v1/categorize` | `routers/v1.py` | Required | 50/min | Rule-engine categorize + persist; returns `transaction_id` |
 | POST | `/v1/resolve` | `routers/v1.py` | Required | global | Resolve noisy bank text to canonical merchant |
 | POST | `/v1/confidence/evaluate` | `routers/v1.py` | Required | global | Apply the confidence wall to an upstream prediction |
 | POST | `/memory/update` | `routers/memory.py` | Required | global | Record an entity encounter, run state machine |
@@ -20,14 +19,20 @@ All endpoints are served by the single FastAPI app defined in `app.py`. Base pat
 | GET | `/v1/analytics/patterns/categories` | `routers/analytics.py` | Required | global | Spend breakdown by category over a lookback window |
 | GET | `/v1/analytics/patterns/merchants` | `routers/analytics.py` | Required | global | Top merchants by visit frequency |
 | GET | `/v1/analytics/subscriptions` | `routers/analytics.py` | Required | global | Detected recurring subscriptions + monthly burn |
-| GET | `/v1/analytics/trends/mom` | `routers/analytics.py` | Required | global | Month-over-month spend growth |
+| GET | `/v1/analytics/trends/mom` | `routers/analytics.py` | Required | global | Month-over-month spend growth (real query, no longer mocked) |
 | POST | `/v1/analytics/anomaly/check` | `routers/analytics.py` | Required | global | Z-score anomaly check for a transaction amount |
 | POST | `/v1/explain` | `routers/rag.py` | Required | global | Grounded RAG explanation of a transaction |
+| POST | `/v1/feedback/` | `feedback/api_router.py` | Required | global | Submit human correction feedback; joins back to `merchant_name` |
+| POST | `/v1/pipelines/behavior/run`, `/run-all` | `routers/pipelines.py` | Required | global | Phase 6 behavior profiling (single merchant / all) |
+| POST | `/v1/pipelines/embeddings/sync` | `routers/pipelines.py` | Required | global | Phase 7 embedding generation + Milvus write |
+| POST | `/v1/pipelines/decay/sweep` | `routers/pipelines.py` | Required | global | Phase 4 180-day archival sweep |
+| POST | `/v1/pipelines/graph/build` | `routers/pipelines.py` | Required | global | Phase 13 knowledge graph rebuild |
+| GET | `/v1/pipelines/graph/neighborhood/{merchant_name}` | `routers/pipelines.py` | Required | global | Ego-graph around a merchant |
+| POST | `/v1/pipelines/clustering/run` | `routers/pipelines.py` | Required | global | Phase 8 UMAP + HDBSCAN discovery pipeline |
 | POST | `/v1/observability/drift/analyze` | `routers/observability.py` | Required | global | Stub: "triggers" drift analysis |
 | GET | `/v1/observability/reports/latest` | `routers/observability.py` | Required | global | Stub: always 404, no report generation exists |
-| POST | `/v1/feedback/` | `feedback/api_router.py` | N/A | N/A | **Not mounted — unreachable in the running app** |
 
-> There are **two** `POST /v1/categorize` routes defined in the codebase: the real rule-engine implementation in `routers/v1.py`, and a static stub registered directly on `app` in `app.py` (`public_categorize`, which just returns `{"status": "success", "message": "Transaction routed to Intelligence Engine."}` and touches nothing else). Both resolve to the exact same path. `app.py` calls `app.include_router(v1.router, ...)` at line 65 — before the inline `@app.post("/v1/categorize")` stub is declared at line 73 — so Starlette's route table has the router's handler first, and **that is the one that actually receives traffic**. The inline stub is unreachable dead code. This duplication is unintentional; see [Known Issues](./16-known-issues-tech-debt.md#duplicate-v1-categorize-route).
+> **Previously** there were two `POST /v1/categorize` routes — the real implementation in `routers/v1.py` and a dead inline stub in `app.py` that carried the intended `50/min` rate limit. The stub is removed and its rate limit now lives on the real handler (see [Known Issues §16.3](./16-known-issues-tech-debt.md#163-medium-previously-disconnected-features-dead-code-silent-no-ops--fixed)).
 
 ## 2.2 System endpoints
 
@@ -54,11 +59,11 @@ Standard Prometheus text exposition format, auto-generated by `prometheus_fastap
 ```json
 { "text": "paid 500 to swiggy" }
 ```
-**Intended response** (`CategorizeResponse`):
+**Response** (`CategorizeResponse`):
 ```json
-{ "merchant": "Swiggy", "category": "Food", "confidence": 0.95 }
+{ "merchant": "Swiggy", "category": "Food", "confidence": 0.95, "transaction_id": "666f6f2d6261722d71757578" }
 ```
-**Actual behavior**: the handler calls `request.get("text", "")` on a Pydantic model instance (`CategorizeRequest`), which has no `.get()` method — this raises `AttributeError` at runtime. Even if that line were fixed, `datetime.now(time.timezone.utc)` a few lines later raises a second `AttributeError` (`time.timezone` is a plain int, not an object with a `.utc` attribute — the intended call was `datetime.now(timezone.utc)` using `datetime.timezone`, already imported in the file). Even past both of those, the subsequent `db.transactions.insert_one(...)` call assigns `"merchant": merchant_resolver` (the module-level resolver object) and `"category": categorize_transaction` (the handler function itself) instead of resolved values — these would serialize incorrectly or fail BSON encoding. **This endpoint is not currently usable.** Full detail in [Known Issues](./16-known-issues-tech-debt.md#v1-categorize-is-broken).
+Runs the rule engine against `payload.text`, persists the enriched transaction to `transactions`, and returns the resolved merchant/category/confidence plus the inserted document's `transaction_id` (a stringified Mongo `_id`) — pass this to `POST /v1/feedback/` to let feedback join back to a merchant. Rate-limited to 50/minute per caller. This previously raised `AttributeError` on every call (a `.get()` call on a Pydantic model, a `time.timezone.utc` typo, and placeholder object references written to Mongo instead of resolved values) — fixed, see [Known Issues §16.1](./16-known-issues-tech-debt.md#161-critical-previously-broke-the-application-or-a-whole-feature--all-fixed).
 
 ### `POST /v1/resolve`
 **Request**:
@@ -148,9 +153,9 @@ Joins `transactions` against `behavior_patterns` (via `$lookup` on `merchant_nam
 
 ### `GET /v1/analytics/trends/mom`
 ```json
-{ "current_spend": 8213.5, "previous_spend": 15000.0, "mom_growth_percentage": -45.24, "trend": "down" }
+{ "current_spend": 8213.5, "previous_spend": 15102.0, "mom_growth_percentage": -45.61, "trend": "down" }
 ```
-`previous_spend` is a **hardcoded constant `15000.0`** in `analytics/trends.py` — it is not queried from the database. This endpoint does not actually compute real month-over-month growth today; see [Known Issues](./16-known-issues-tech-debt.md#mom-trend-is-mocked).
+`previous_spend` is now a real aggregation over the previous calendar month (previously a hardcoded `15000.0`) — fixed, see [Known Issues §16.2](./16-known-issues-tech-debt.md#162-high-previously-security--correctness-with-real-user-impact--all-fixed). The current-month query is also now upper-bounded to the current month only (it previously summed everything from the 1st of the month onward with no end date).
 
 ### `POST /v1/analytics/anomaly/check?merchant=Uber&amount=99999`
 Note: parameters are plain query parameters (`merchant: str, amount: float` as function args), not a JSON body, despite the router being a `POST`.
@@ -190,22 +195,49 @@ Always returns `{"status": "success", "message": "Drift analysis triggered succe
 ### `GET /v1/observability/reports/latest`
 Always returns `404` with `{"message": "No drift reports have been generated yet."}`. There is no code path that could ever generate or serve a report.
 
-## 2.8 Feedback & Active Learning (`feedback/api_router.py`, prefix `/v1/feedback`) — **not mounted**
+## 2.8 Feedback & Active Learning (`feedback/api_router.py`, prefix `/v1/feedback`)
 
-This router is fully implemented but `app.py` never calls `app.include_router(feedback.router)`. It is dead code from an HTTP standpoint. Documented here for completeness since `test_api.py` still exercises the intended contract (and silently no-ops if it 404s, since the test only asserts inside an `if response.status_code == 200:` guard).
+`app.py` now imports and mounts `feedback.router` (`app.include_router(feedback_router, dependencies=[Depends(validate_api_key)])`) behind the same auth as every other router. Previously this was dead code from an HTTP standpoint — fixed, see [Known Issues §16.3](./16-known-issues-tech-debt.md#163-medium-previously-disconnected-features-dead-code-silent-no-ops--fixed).
 
-### `POST /v1/feedback/` (unreachable)
+### `POST /v1/feedback/`
 **Request**:
 ```json
-{ "transaction_id": "tx_1234", "original_prediction": "Unknown", "corrected_category": "Travel", "confidence": 0.40 }
+{ "transaction_id": "666f6f2d6261722d71757578", "original_prediction": "Unknown", "corrected_category": "Travel", "confidence": 0.40 }
 ```
-**Intended response**:
+**Response**:
 ```json
 { "status": "success", "feedback_recorded": true }
 ```
-See [09 · Feedback & Active Learning](./09-feedback-active-learning.md) for the full pipeline this would trigger if mounted.
+`transaction_id` should be the id returned by `POST /v1/categorize`. `process_feedback` looks that transaction up to resolve its merchant and writes a real `merchant_name` field on the feedback document (previously it stored the category prediction in a field that RAG/graph readers mistakenly queried as if it were a merchant name — fixed, see [Known Issues §16.2](./16-known-issues-tech-debt.md#162-high-previously-security--correctness-with-real-user-impact--all-fixed)). If `is_correction` is true (prediction != corrected category), a background task checks whether the retraining queue threshold has been hit.
 
-## 2.9 Error model
+See [09 · Feedback & Active Learning](./09-feedback-active-learning.md) for the full pipeline.
+
+## 2.9 Batch Pipelines (`routers/pipelines.py`, prefix `/v1/pipelines`)
+
+New router added to make previously-orphaned pipelines reachable (Phases 4, 6, 7, 8, 13 had zero callers anywhere in the repo — see [Known Issues §16.3](./16-known-issues-tech-debt.md#163-medium-previously-disconnected-features-dead-code-silent-no-ops--fixed)). Nothing schedules these automatically yet; they're manual-trigger endpoints until a cron/Celery beat is stood up.
+
+### `POST /v1/pipelines/behavior/run`
+**Request**: `{ "merchant_name": "Swiggy" }` — profiles one merchant from its transaction history. `404` if the merchant has no transactions.
+
+### `POST /v1/pipelines/behavior/run-all`
+No body. Profiles every distinct merchant in `transactions`. Response: `{ "profiled": [...], "failed": [...] }`. Run this before `/v1/analytics/subscriptions` or `/v1/analytics/anomaly/check` in a fresh environment — both depend on `behavior_patterns` being populated.
+
+### `POST /v1/pipelines/embeddings/sync`
+No body. Generates an Ollama embedding for every stored `behavior_patterns` document and upserts it into Milvus. Returns `503` if Milvus isn't connected; otherwise `{ "synced": [...], "failed": [...] }`.
+
+### `POST /v1/pipelines/decay/sweep`
+No body. Archives merchant profiles inactive 180+ days. Response: `{ "archived_count": <int> }`.
+
+### `POST /v1/pipelines/graph/build`
+No body. Rebuilds the in-memory knowledge graph from `merchant_profiles`, `behavior_patterns`, and `feedback`. Response: `{ "total_nodes": <int>, "total_edges": <int>, "density": <float> }`.
+
+### `GET /v1/pipelines/graph/neighborhood/{merchant_name}?radius=2`
+Returns the ego-graph around a merchant. Requires `/graph/build` to have been called in this process first — the graph is in-memory, not persisted.
+
+### `POST /v1/pipelines/clustering/run`
+No body. Runs the Phase 8 UMAP + HDBSCAN discovery pipeline over vectors stored in Milvus (needs at least 10 vectors; requires `scikit-learn` + `umap-learn`, imported lazily inside this handler so a missing/broken install only breaks this one endpoint). Response includes cluster count, noise count, and silhouette/Davies-Bouldin metrics.
+
+## 2.10 Error model
 
 There is no centralized exception handler beyond FastAPI/Pydantic defaults and SlowAPI's `RateLimitExceeded` handler. Standard shapes you will encounter:
 
@@ -216,4 +248,4 @@ There is no centralized exception handler beyond FastAPI/Pydantic defaults and S
 | `404` | Memory profile not found; observability report not found | `{"detail": "..."}` or custom `{"message": "..."}` |
 | `422` | Pydantic request validation failure | Standard FastAPI validation error array |
 | `429` | Rate limit exceeded | SlowAPI default body |
-| `500` | Unhandled exception (e.g., the `/v1/categorize` bug) | Default FastAPI traceback response (`DEBUG` logging is on, so stack traces are verbose in logs) |
+| `500` | Unhandled exception | Default FastAPI traceback response (`DEBUG` logging is on, so stack traces are verbose in logs) |
