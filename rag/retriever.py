@@ -27,7 +27,7 @@ class ContextRetriever:
             behavior = await db.behavior_patterns.find_one({"merchant_name": name}, {"_id": 0})
             
             # Fetch human feedback specifically targeting this merchant's predictions
-            cursor = db.feedback.find({"prediction": name}).sort("timestamp", -1).limit(3)
+            cursor = db.feedback.find({"merchant_name": name}).sort("timestamp", -1).limit(3)
             feedback = [doc async for doc in cursor]
             
             # Clean ObjectIds for JSON serialization

@@ -2,7 +2,7 @@ import numpy as np
 import logging
 from typing import Dict, Any
 from sklearn.cluster import KMeans
-from sklearn.metrics import silhouette_score, davies_bouldin_index
+from sklearn.metrics import silhouette_score, davies_bouldin_score
 
 from database.mongo import db
 from milvus.insert_vectors import vector_store
@@ -22,8 +22,12 @@ class ClusterEngine:
         # 1. Fetch Vectors from Milvus
         # We query for all entities that have an embedding.
         try:
-            results = vector_store.behavior_collection.query(
-                expr="id != ''", 
+            if vector_store.client is None:
+                logger.error("Milvus client not connected; cannot fetch vectors.")
+                return {}
+            results = vector_store.client.query(
+                collection_name=vector_store.behavior_col_name,
+                filter="id != ''",
                 output_fields=["merchant_name", "embedding"]
             )
         except Exception as e:
@@ -72,7 +76,7 @@ class ClusterEngine:
             # Silhouette: Near 1.0 means clusters are dense and well-separated. < 0 means overlapping.
             "silhouette_score": round(float(silhouette_score(valid_data, valid_labels)), 4),
             # Davies Bouldin: Lower is better. Measures ratio of within-cluster scatter to between-cluster separation.
-            "davies_bouldin": round(float(davies_bouldin_index(valid_data, valid_labels)), 4)
+            "davies_bouldin": round(float(davies_bouldin_score(valid_data, valid_labels)), 4)
             # Note: Cluster Purity requires labeled ground-truth data, which we will calculate later 
             # when comparing against Phase 2 Rule Engine outputs.
         }

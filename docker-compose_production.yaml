@@ -9,10 +9,17 @@ services:
     volumes:
       - .:/app
     environment:
-      - MONGO_URI=mongodb://lokesh:Lokesh%401234@123156456323:27017/?authSource=admin
-      - MONGO_DB_NAME=velar
-      - MILVUS_HOST=10.10.10.130
-      - MILVUS_PORT=19530
+      # All values below are supplied by a docker-compose ".env" file or the
+      # host/CI secret store at deploy time - never hardcode credentials here.
+      # Variable names must match core/config.py's Settings fields exactly.
+      - MONGODB_URI=${MONGODB_URI:?MONGODB_URI must be set}
+      - MONGODB_DB_NAME=${MONGODB_DB_NAME:-velar}
+      - MILVUS_URI=${MILVUS_URI:?MILVUS_URI must be set}
+      - OLLAMA_URI=${OLLAMA_URI:-}
+      - OLLAMA_HOSTS=${OLLAMA_HOSTS:-}
+      - EMBED_MODEL=${EMBED_MODEL:?EMBED_MODEL must be set}
+      - LLM_MODEL=${LLM_MODEL:?LLM_MODEL must be set}
+      - VELAR_API_KEY=${VELAR_API_KEY:?VELAR_API_KEY must be set}
     ports:
       - "9850:8000"
     restart: always

@@ -29,9 +29,12 @@ class Transaction(CoreModel):
 class Feedback(CoreModel):
     id: Optional[str] = Field(alias="_id", default=None)
     transaction_id: str
+    merchant_name: Optional[str] = None
     prediction: str
     corrected_category: str
     confidence: float
+    is_correction: bool = False
+    user_id: str = "system_user"
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class CategorizeRequest(BaseModel):
@@ -41,6 +44,7 @@ class CategorizeResponse(BaseModel):
     merchant: str
     category: str
     confidence: float
+    transaction_id: Optional[str] = None
 
 class ResolutionResult(BaseModel):
     raw_text: str
@@ -85,6 +89,9 @@ class TransactionCategory(str, Enum):
     FRIENDS = "Friends"
     EDUCATION = "Education"
     HEALTHCARE = "Healthcare"
+    SUBSCRIPTION = "Subscription"
+    SHOPPING = "Shopping"
+    UTILITY = "Utility"
     UNKNOWN = "Unknown"
 
 class ConfidenceEvaluation(BaseModel):

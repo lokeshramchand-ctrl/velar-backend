@@ -1,21 +1,36 @@
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Any
+from typing import Dict, Any, Optional
+
+from bson import ObjectId
+from bson.errors import InvalidId
 
 from database.mongo import db
 
 logger = logging.getLogger(__name__)
 
 class FeedbackService:
+    async def _lookup_merchant_name(self, transaction_id: str) -> Optional[str]:
+        """Resolves the merchant name tied to a transaction, so feedback can be
+        joined back to a merchant (rather than only to a category prediction)."""
+        try:
+            oid = ObjectId(transaction_id)
+        except (InvalidId, TypeError):
+            return None
+        transaction = await db.transactions.find_one({"_id": oid}, {"merchant": 1})
+        return transaction.get("merchant") if transaction else None
+
     async def process_feedback(self, transaction_id: str, original_prediction: str, corrected_category: str, confidence: float, user_id: str = "system_user") -> Dict[str, Any]:
         """
-        Logs human feedback. If the human corrects the model, it routes the 
+        Logs human feedback. If the human corrects the model, it routes the
         transaction to the retraining queue for Active Learning.
         """
         is_correction = original_prediction != corrected_category
-        
+        merchant_name = await self._lookup_merchant_name(transaction_id)
+
         feedback_doc = {
             "transaction_id": transaction_id,
+            "merchant_name": merchant_name,
             "prediction": original_prediction,
             "corrected_category": corrected_category,
             "confidence": confidence,
@@ -23,7 +38,7 @@ class FeedbackService:
             "user_id": user_id,
             "timestamp": datetime.now(timezone.utc)
         }
-        
+
         # 1. Save to the main feedback dataset
         await db.feedback.insert_one(feedback_doc)
         

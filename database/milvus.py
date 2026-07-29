@@ -1,5 +1,5 @@
+import asyncio
 import logging
-import time
 from pymilvus import MilvusClient, MilvusException
 from core.config import settings
 
@@ -30,11 +30,11 @@ class VectorDB:
                     "Milvus not ready (attempt %d/%d): %s",
                     attempt, retries, str(e)
                 )
-                time.sleep(delay)
+                await asyncio.sleep(delay)
 
             except Exception as e:
                 logger.exception("Unexpected error while connecting to Milvus")
-                time.sleep(delay)
+                await asyncio.sleep(delay)
 
         logger.error("Failed to connect to Milvus after %d attempts", retries)
         cls.client = None

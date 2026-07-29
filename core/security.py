@@ -2,6 +2,8 @@ from fastapi import Security, HTTPException, status
 from fastapi.security.api_key import APIKeyHeader
 import logging
 
+from core.config import settings
+
 logger = logging.getLogger(__name__)
 
 API_KEY_NAME = "X-Velar-API-Key"
@@ -18,7 +20,7 @@ async def validate_api_key(api_key_header: str = Security(api_key_header)) -> st
             detail="Missing X-Velar-API-Key header"
         )
     
-    if api_key_header != "velar_test_key_123":
+    if api_key_header != settings.VELAR_API_KEY:
         logger.warning("Rejected invalid API key attempt.")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, 

@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 import logging
 import httpx
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends
 
 # Settings
 from core.config import settings
@@ -9,15 +9,17 @@ from core.config import settings
 # Middleware & Security
 from prometheus_fastapi_instrumentator import Instrumentator
 from core.security import validate_api_key
-from core.rate_limiter import setup_rate_limiting, limiter
+from core.rate_limiter import setup_rate_limiting
 
 # Databases
 from database.mongo import db
 from database.milvus import vector_db
+from milvus.insert_vectors import vector_store
 
 # Routers
-from routers import v1, memory, analytics, rag
+from routers import v1, memory, analytics, rag, pipelines
 from routers.observability import router as observability_router
+from feedback.api_router import router as feedback_router
 
 
 # Logging
@@ -37,7 +39,8 @@ async def lifespan(app: FastAPI):
     await db.connect(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB_NAME)
 
     # Milvus
-    vector_db.connect(uri=settings.MILVUS_URI)
+    await vector_db.connect(uri=settings.MILVUS_URI)
+    vector_store.ensure_collections()
 
     yield
 
@@ -67,13 +70,8 @@ app.include_router(memory.router, dependencies=[Depends(validate_api_key)])
 app.include_router(analytics.router, dependencies=[Depends(validate_api_key)])
 app.include_router(rag.router, dependencies=[Depends(validate_api_key)])
 app.include_router(observability_router, dependencies=[Depends(validate_api_key)])
-
-
-# Public API
-@app.post("/v1/categorize", dependencies=[Depends(validate_api_key)], tags=["Public API"])
-@limiter.limit("50/minute")
-async def public_categorize(request: Request, payload: dict):
-    return {"status": "success", "message": "Transaction routed to Intelligence Engine."}
+app.include_router(feedback_router, dependencies=[Depends(validate_api_key)])
+app.include_router(pipelines.router, dependencies=[Depends(validate_api_key)])
 
 
 # Health Check
