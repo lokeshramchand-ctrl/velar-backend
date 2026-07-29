@@ -1,15 +1,15 @@
 from fastapi import APIRouter, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from feedback.feedback_service import feedback_service
 from feedback.retraining_queue import retraining_manager
 
 router = APIRouter(prefix="/v1/feedback", tags=["Continuous Learning"])
 
 class FeedbackRequest(BaseModel):
-    transaction_id: str
-    original_prediction: str
-    corrected_category: str
-    confidence: float
+    transaction_id: str = Field(..., min_length=1, max_length=100)
+    original_prediction: str = Field(..., min_length=1, max_length=100)
+    corrected_category: str = Field(..., min_length=1, max_length=100)
+    confidence: float = Field(..., ge=0.0, le=1.0)
 
 @router.post("/")
 async def submit_feedback(request: FeedbackRequest, background_tasks: BackgroundTasks):

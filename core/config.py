@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     LLM_MODEL: str
     VELAR_API_KEY: str
 
+    # Operational settings (all have safe production-appropriate defaults)
+    ENVIRONMENT: str = "production"  # "production" | "development"
+    LOG_LEVEL: str = "INFO"  # DEBUG is opt-in, never the default - DEBUG logs full DB command payloads
+    MAX_REQUEST_BODY_BYTES: int = 1_000_000  # 1 MB - rejects oversized request bodies before parsing
+    MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = 5000
+    MONGODB_CONNECT_TIMEOUT_MS: int = 5000
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @property

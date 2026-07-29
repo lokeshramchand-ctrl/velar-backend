@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import re
 from fastapi import APIRouter, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from models.schemas import CategorizeRequest, CategorizeResponse , ResolutionResult
 from engines.rule_engine import rule_engine
 from engines.confidence_engine import confidence_engine
@@ -44,7 +44,7 @@ async def categorize_transaction(request: Request, payload: CategorizeRequest):
     return {**result, "transaction_id": str(insert_result.inserted_id)}
 
 class ResolveRequest(BaseModel):
-    text: str
+    text: str = Field(..., min_length=1, max_length=2000)
 
 @router.post("/resolve", response_model=ResolutionResult)
 async def resolve_transaction_merchant(request: ResolveRequest):
@@ -55,8 +55,8 @@ async def resolve_transaction_merchant(request: ResolveRequest):
     return result
 
 class MockModelPrediction(BaseModel):
-    predicted_category: str
-    raw_confidence: float
+    predicted_category: str = Field(..., min_length=1, max_length=100)
+    raw_confidence: float = Field(..., ge=0.0, le=1.0)
 
 @router.post("/confidence/evaluate", response_model=ConfidenceEvaluation)
 async def evaluate_prediction_confidence(request: MockModelPrediction):

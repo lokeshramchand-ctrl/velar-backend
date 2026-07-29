@@ -28,7 +28,7 @@ class Feedback(CoreModel):
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class CategorizeRequest(BaseModel):
-    text: str = Field(..., description="Raw transaction SMS or bank statement text")
+    text: str = Field(..., min_length=1, max_length=2000, description="Raw transaction SMS or bank statement text")
 
 class CategorizeResponse(BaseModel):
     merchant: str
