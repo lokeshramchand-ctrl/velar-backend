@@ -67,11 +67,11 @@ confidence = min(0.99, z / 10.0)
 `GET /v1/analytics/trends/mom`
 
 ```python
-curr_total = sum(amount) where user_id matches and timestamp >= first-of-current-month
-prev_total = 15000.0   # hardcoded constant, comment says "Replace with actual DB query"
+curr_total = sum(amount) where user_id matches and first-of-current-month <= timestamp < first-of-next-month
+prev_total = sum(amount) where user_id matches and first-of-previous-month <= timestamp < first-of-current-month
 growth = (curr_total - prev_total) / prev_total * 100   # or 0.0 if prev_total == 0
 ```
-**This endpoint does not compute a real previous-month total.** It is explicitly a mocked stub — the comment in the source literally says so. Any `mom_growth_percentage` or `trend` value returned by this endpoint today is comparing real current-month spend against a fixed ₹15,000 baseline, not the user's actual prior month. See [Known Issues](./16-known-issues-tech-debt.md#mom-trend-is-mocked) — **do not surface this endpoint's output to end users as real analytics until it's fixed.**
+✅ **FIXED** — `prev_total` is now a real aggregation over the previous calendar month, not the previously-hardcoded `15000.0`. A second, adjacent bug was fixed at the same time: the current-month query previously had no upper bound (`timestamp >= first-of-current-month` with no end date), so it would keep summing every future transaction indefinitely instead of stopping at the end of the month — both queries are now correctly bounded. See [Known Issues §16.2](./16-known-issues-tech-debt.md#162-high-previously-security--correctness-with-real-user-impact--all-fixed).
 
 ## 11.6 Summary of data dependencies
 
@@ -79,6 +79,6 @@ growth = (curr_total - prev_total) / prev_total * 100   # or 0.0 if prev_total =
 |---|---|
 | `/patterns/categories` | `transactions` only — works out of the box once transactions exist |
 | `/patterns/merchants` | `transactions` only — works out of the box |
-| `/subscriptions` | `transactions` **and** `behavior_patterns` (requires manual `behavior_engine` runs) |
-| `/anomaly/check` | `behavior_patterns` only (requires manual `behavior_engine` runs) |
-| `/trends/mom` | `transactions` for current month; previous month is **hardcoded**, not real |
+| `/subscriptions` | `transactions` **and** `behavior_patterns` — run `POST /v1/pipelines/behavior/run-all` first |
+| `/anomaly/check` | `behavior_patterns` only — run `POST /v1/pipelines/behavior/run-all` first |
+| `/trends/mom` | `transactions` for both the current and previous calendar month (real query, no longer hardcoded) |

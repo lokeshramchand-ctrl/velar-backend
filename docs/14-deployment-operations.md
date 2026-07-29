@@ -2,9 +2,7 @@
 
 ## 14.1 Python dependencies
 
-`requirements.txt` (used by `Dockerfile`) and `requirements-linux.txt` (a superset used for a full Linux/Ubuntu system) both list packages such as `attrs`, `Automat`, `Twisted`, `PyGObject`, `python-apt`, `ubuntu-pro-client`, `cloud-init` — these are **Ubuntu/`apt`-managed system Python packages**, not application dependencies. Neither file lists `fastapi`, `uvicorn`, `pydantic`, `motor`, `pymilvus`, `slowapi`, `prometheus-fastapi-instrumentator`, `httpx`, `scikit-learn`, `umap-learn`, `hdbscan` (or scikit-learn's bundled `HDBSCAN`), `networkx`, `pandas`, `numpy`, `lightgbm`, `xgboost`, `shap`, `torch`, `transformers`, `peft`, or `datasets` — every third-party package actually imported by the application code in this repository.
-
-**Practical consequence**: running `pip install -r requirements.txt` (exactly what `Dockerfile` line 6 does) will **not** install anything the application needs to run, and `docker build` will produce an image that fails immediately on `CMD ["uvicorn", "app:app", ...]` with `ModuleNotFoundError: No module named 'fastapi'`. This is the top infrastructure-level finding in [16 · Known Issues](./16-known-issues-tech-debt.md#requirementstxt-is-not-the-apps-dependency-list). Until corrected, anyone deploying from this repo as-is needs to manually `pip install` the actual runtime dependencies (cross-reference the `import` statements across `app.py`, every `routers/*.py`, `core/*.py`, `database/*.py`, `engines/*.py`, `services/*.py`, `analytics/*.py`, `features/*.py`, `behaviour/*.py`, `memory/*.py`, `repositories/*.py`, `embeddings/*.py`, `milvus/*.py`, `clustering/*.py`, `graphs/*.py`, `rag/*.py`, `feedback/*.py`, `training/*.py`, and `evaluation/*.py` to build a correct list — this documentation set's other pages cite the exact import lines module-by-module).
+✅ **FIXED.** `requirements.txt` and `requirements-linux.txt` previously listed Ubuntu/`apt`-managed system packages (`attrs`, `Automat`, `Twisted`, `PyGObject`, `python-apt`, `ubuntu-pro-client`, `cloud-init`, etc.) instead of application dependencies. Both files now list the actual runtime dependencies (`fastapi`, `uvicorn`, `pydantic`/`pydantic-settings`, `motor`, `pymilvus`, `slowapi`, `prometheus-fastapi-instrumentator`, `httpx`, `scikit-learn`, `umap-learn`, `networkx`, `pandas`, `numpy`, `lightgbm`, `xgboost`, `shap`, `tabulate`, `torch`, `transformers`, `peft`, `datasets`), pinned to specific versions. `pip install -r requirements.txt` (what `Dockerfile` runs) now installs everything `app.py`'s import graph needs — verified by a clean `import app` and a full `pytest` pass in a fresh virtualenv built solely from this file. See [Known Issues §16.1](./16-known-issues-tech-debt.md#161-critical-previously-broke-the-application-or-a-whole-feature--all-fixed).
 
 ## 14.2 Dockerfile
 
@@ -38,13 +36,19 @@ services:
   velar-backend:
     build: .
     environment:
-      - MONGO_URI=mongodb://lokesh:Lokesh%401234@123156456323:27017/?authSource=admin
-      - MONGO_DB_NAME=velar
-      - MILVUS_HOST=10.10.10.130
-      - MILVUS_PORT=19530
+      - MONGODB_URI=${MONGODB_URI:?MONGODB_URI must be set}
+      - MONGODB_DB_NAME=${MONGODB_DB_NAME:-velar}
+      - MILVUS_URI=${MILVUS_URI:?MILVUS_URI must be set}
+      - OLLAMA_URI=${OLLAMA_URI:-}
+      - OLLAMA_HOSTS=${OLLAMA_HOSTS:-}
+      - EMBED_MODEL=${EMBED_MODEL:?EMBED_MODEL must be set}
+      - LLM_MODEL=${LLM_MODEL:?LLM_MODEL must be set}
+      - VELAR_API_KEY=${VELAR_API_KEY:?VELAR_API_KEY must be set}
     networks: [coolify]   # external network, implies deployment via Coolify PaaS
 ```
-⚠ **This file contains what appears to be a live-looking credential** (a MongoDB username/password embedded directly in the connection string) committed in plaintext to version control. Even if this specific value is a placeholder or has since been rotated, treat any committed connection string with embedded credentials as compromised and rotate it — see [Known Issues](./16-known-issues-tech-debt.md#plaintext-credential-in-compose-file). Also note the env var names here (`MONGO_URI`, `MONGO_DB_NAME`, `MILVUS_HOST`, `MILVUS_PORT`) **do not match** what `core/config.py` actually reads (`MONGODB_URI`, `MONGODB_DB_NAME`, `MILVUS_URI`) — running the app with only these environment variables set would fail Pydantic settings validation (missing required `MONGODB_URI`, `MILVUS_URI`, `EMBED_MODEL`, `LLM_MODEL`, `VELAR_API_KEY`). This compose file predates or was never updated alongside the current `Settings` schema.
+✅ **FIXED — both issues.** This file previously committed a plaintext MongoDB username/password directly in the connection string, and used env var names (`MONGO_URI`, `MONGO_DB_NAME`, `MILVUS_HOST`, `MILVUS_PORT`) that didn't match what `core/config.py` reads. It now sources every value via `${VAR:?required}`/`${VAR:-default}` substitution from a compose `.env` file or the host/CI secret store, with names matching `Settings` exactly. See [Known Issues §16.2–16.3](./16-known-issues-tech-debt.md).
+
+**Action still required from whoever operates this deployment** (not something fixable from inside the repo): the credential previously committed here is in git history and must be treated as compromised — rotate it on the actual MongoDB server. Removing it from the tracked file does not undo its prior exposure.
 
 ## 14.4 Required environment variables (authoritative — from `core/config.py`)
 
@@ -56,23 +60,26 @@ OLLAMA_URI=http://<host>:11434        # OR use OLLAMA_HOSTS below
 OLLAMA_HOSTS=http://host1:11434,http://host2:11434
 EMBED_MODEL=<ollama embedding model name>
 LLM_MODEL=<ollama generation model name>
-VELAR_API_KEY=<currently ignored at runtime — see Known Issues>
+VELAR_API_KEY=<enforced on every non-public route via X-Velar-API-Key>
 ```
 Place this file at the repo root as `.env` for local development (loaded via `pydantic_settings`'s `env_file=".env"`); for containerized deployment, either mount/inject it or set each variable directly in the container environment (aligning names exactly — see the mismatch warning above for `docker-compose_production.yaml`).
 
 ## 14.5 Bootstrapping data (manual, out-of-band steps)
 
-None of these run automatically on startup — they must be triggered manually, in this order, for the full feature set to produce meaningful results:
+None of these run automatically on startup (no scheduler exists), but all are now reachable via HTTP instead of requiring direct script/REPL invocation:
 
 1. `python scripts/seed.py` — seeds canonical `merchants` (Swiggy, Zomato, Netflix + aliases) so `/v1/resolve` can find matches beyond `"Unknown"`.
 2. `python scripts/mock_seeder.py` (and `python scripts/mock_seeder.py cleanup` to remove it) — injects 100 synthetic `is_mock: True` transactions for `user_id: "user_123"` so the Analytics Engine has data to aggregate. Used by `scripts/test_pipeline.sh`.
-3. Manually invoke `behaviour.behavior_engine.behavior_engine.profile_merchant_behavior(merchant_name)` per merchant (no CLI wrapper exists) to populate `behavior_patterns` — required before `/v1/analytics/subscriptions` or `/v1/analytics/anomaly/check` return anything non-trivial.
-4. Embedding generation and Milvus insertion (`embeddings/vectorizer.py` → `embeddings/generate_embeddings.py` → `milvus/insert_vectors.py::insert_behavior_vector`) has no orchestrating script at all today — must be scripted ad hoc before `/v1/explain` can retrieve any grounded context.
-5. `python clustering/cluster_engine.py`-style invocation of `ClusterEngine.run_discovery_pipeline()` is currently **non-functional** due to the `davies_bouldin_index` import bug — see [07 · Embeddings, Vector Search & Clustering §7.4](./07-embeddings-vectorsearch-clustering.md#74-phase-8-clustering-pipeline--clusteringpy).
+3. `POST /v1/pipelines/behavior/run-all` — profiles every distinct merchant seen in `transactions` and populates `behavior_patterns`, required before `/v1/analytics/subscriptions` or `/v1/analytics/anomaly/check` return anything non-trivial.
+4. `POST /v1/pipelines/embeddings/sync` — generates embeddings for every stored `behavior_pattern` and inserts them into Milvus, required before `/v1/explain` can retrieve any grounded context.
+5. `POST /v1/pipelines/clustering/run` — runs `ClusterEngine.run_discovery_pipeline()` (the `davies_bouldin_index` import bug is fixed — see [07 · Embeddings, Vector Search & Clustering §7.4](./07-embeddings-vectorsearch-clustering.md#74-phase-8-clustering-pipeline--clusteringpy)).
+6. `POST /v1/pipelines/decay/sweep` and `POST /v1/pipelines/graph/build` — the Phase 4 archival sweep and Phase 13 knowledge graph rebuild, both previously fully orphaned with zero callers.
+
+Full request/response details for all of these are in [02 · API Reference §2.9](./02-api-reference.md#29-batch-pipelines-routerspipelinespy-prefix-v1pipelines).
 
 ## 14.6 `scripts/test_pipeline.sh` — manual E2E smoke test
 
-A bash script exercising the API end-to-end against a running server at `http://localhost:8080` (note: this differs from the Dockerfile's default port `8000` and compose's exposed port `9850` — adjust `BASE_URL` to match whichever way you've started the server). It parses `VELAR_API_KEY` out of a local `.env` if present, falling back to the hardcoded `velar_test_key_123` (which is the only value `core/security.py` actually accepts regardless). Exercises: merchant resolution, memory state promotion (3 calls to force `EPHEMERAL → TEMPORARY`), the confidence wall, mock data seeding, top-merchant/category analytics, then cleans up the mock data it created.
+A bash script exercising the API end-to-end against a running server at `http://localhost:8080` (note: this differs from the Dockerfile's default port `8000` and compose's exposed port `9850` — adjust `BASE_URL` to match whichever way you've started the server). It parses `VELAR_API_KEY` out of a local `.env` if present, falling back to the hardcoded `velar_test_key_123` — make sure this matches your actual configured `VELAR_API_KEY`, since `core/security.py` now enforces the real configured value rather than accepting that literal unconditionally. Exercises: merchant resolution, memory state promotion (3 calls to force `EPHEMERAL → TEMPORARY`), the confidence wall, mock data seeding, top-merchant/category analytics, then cleans up the mock data it created.
 
 ## 14.7 Running locally without Docker
 

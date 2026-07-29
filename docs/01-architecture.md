@@ -48,9 +48,9 @@ flowchart LR
     Prometheus(["Prometheus scraper"]) -- "GET /metrics" --> APP
 ```
 
-`app.py`'s `lifespan` context manager is the composition root: on startup it calls `db.connect(...)` (`database/mongo.py`) and `vector_db.connect(...)` (`database/milvus.py`); on shutdown it calls the corresponding `disconnect()` methods. Both `db` and `vector_db` are process-wide singletons (class-level attributes on `MongoDB` and `VectorDB`), so there is exactly one Mongo client and one Milvus client per process, shared by every request via plain module import (`from database.mongo import db`), not FastAPI dependency injection.
+`app.py`'s `lifespan` context manager is the composition root: on startup it calls `db.connect(...)` (`database/mongo.py`), then `vector_db.connect(...)` (`database/milvus.py`), then `vector_store.ensure_collections()` (`milvus/insert_vectors.py`); on shutdown it calls the corresponding `disconnect()` methods. `db` and `vector_db` are process-wide singletons (class-level attributes on `MongoDB` and `VectorDB`), so there is exactly one Mongo client and one Milvus client per process, shared by every request via plain module import (`from database.mongo import db`), not FastAPI dependency injection.
 
-Note: `milvus/insert_vectors.py` constructs its **own** independent `MilvusClient` at import time (`vector_store = VectorStoreManager()`), reading `MILVUS_URI` directly from `os.getenv` rather than from `core.config.settings` or the `database.milvus.vector_db` singleton. This means the application can end up with **two separate Milvus client connections** — one managed by the app lifespan (`vector_db`, currently unused by any router) and one created eagerly at import time by `VectorStoreManager` (actually used by clustering and vector search). See [16 · Known Issues](./16-known-issues-tech-debt.md#duplicate-milvus-clients).
+✅ **FIXED** — `milvus/insert_vectors.py`'s `VectorStoreManager` previously constructed its **own** independent `MilvusClient` at import time, reading `MILVUS_URI` directly from `os.getenv` rather than `core.config.settings`, giving the process two separate, differently-configured Milvus connections. `VectorStoreManager` no longer opens a connection itself — its `client` property now delegates to `vector_db.client`, the single lifespan-managed connection, and `ensure_collections()` (called once from `lifespan`, after `vector_db.connect()`) replaces the old eager-connect-at-import behavior. This also closed a real startup-stability gap: the old code made a blocking network call with no retry the moment any module importing it was loaded (e.g. via `routers.rag`), so a briefly-unreachable Milvus used to crash the whole app at import time, not just the vector-search feature. See [16 · Known Issues §16.3](./16-known-issues-tech-debt.md#163-medium-previously-disconnected-features-dead-code-silent-no-ops--fixed).
 
 ## 1.3 Request flow — application startup
 
@@ -77,7 +77,7 @@ sequenceDiagram
 
 ## 1.4 Request flow — `/v1/categorize` (rule-based categorization)
 
-This is the primary ingestion endpoint. **It currently contains a fatal implementation bug** (documented below and in [16 · Known Issues](./16-known-issues-tech-debt.md#v1-categorize-is-broken)) that will raise an exception before returning a response; the flow below reflects the code as written.
+This is the primary ingestion endpoint. ✅ Previously it raised an exception on every call (documented in [16 · Known Issues](./16-known-issues-tech-debt.md#161-critical-previously-broke-the-application-or-a-whole-feature--all-fixed)) — that's fixed; the flow below reflects the current, working code.
 
 ```mermaid
 sequenceDiagram
@@ -88,13 +88,12 @@ sequenceDiagram
 
     C->>R: POST /v1/categorize {"text": "..."}
     R->>R: start_time = time.time()
-    R->>RE: rule_engine.categorize(request.text)
+    R->>RE: rule_engine.categorize(payload.text)
     RE-->>R: {merchant, category, confidence}
-    R->>R: text_content = request.get("text", "")  ⚠ CategorizeRequest has no .get()
-    Note over R: AttributeError raised here in practice
-    R->>Mongo: db.transactions.insert_one({... "merchant": merchant_resolver ...})
-    Note over R: Fields assign module objects, not resolved values (see Known Issues)
-    R-->>C: result (never reached today)
+    R->>R: text_content = payload.text
+    R->>Mongo: db.transactions.insert_one({..., "merchant": result["merchant"], "category": result["category"], "confidence": result["confidence"]})
+    Mongo-->>R: inserted_id
+    R-->>C: {merchant, category, confidence, transaction_id}
 ```
 
 `RuleEngine.categorize` itself (`engines/rule_engine.py`) is a clean, deterministic implementation:
@@ -206,22 +205,25 @@ State thresholds (`memory/state_machine.py`): `frequency >= 10` → `PERMANENT`;
 
 ## 1.8 Security & rate limiting
 
-- **Auth**: every router except `/health` and `/metrics` is mounted with `dependencies=[Depends(validate_api_key)]` in `app.py`. `validate_api_key` (`core/security.py`) checks the `X-Velar-API-Key` header against a single **hardcoded** string, `"velar_test_key_123"` — it does not read `settings.VELAR_API_KEY` from config at all, despite that setting existing in `core/config.py` and being required in `.env`. See [16 · Known Issues](./16-known-issues-tech-debt.md#hardcoded-api-key).
-- **Rate limiting**: SlowAPI (`core/rate_limiter.py`) applies a global default of `1000/day` and `100/minute` per client IP (`get_remote_address`). `POST /v1/categorize` (the top-level public route registered directly on `app`, not the router-mounted one) additionally declares `@limiter.limit("50/minute")`.
+- **Auth**: every router except `/health` and `/metrics` is mounted with `dependencies=[Depends(validate_api_key)]` in `app.py`. `validate_api_key` (`core/security.py`) now checks the `X-Velar-API-Key` header against `settings.VELAR_API_KEY` — previously it compared against a hardcoded literal regardless of configuration, fixed, see [16 · Known Issues §16.2](./16-known-issues-tech-debt.md#162-high-previously-security--correctness-with-real-user-impact--all-fixed).
+- **Rate limiting**: SlowAPI (`core/rate_limiter.py`) applies a global default of `1000/day` and `100/minute` per client IP (`get_remote_address`). `POST /v1/categorize` (the real router-mounted handler in `routers/v1.py`) additionally declares `@limiter.limit("50/minute")` — previously this decorator only existed on a dead-code duplicate route that never received traffic; it's now on the actual handler and verified to return `429` once exceeded.
 - **Metrics**: `prometheus_fastapi_instrumentator` auto-instruments every route and exposes `GET /metrics` with no auth dependency.
 
-## 1.9 What is *not* wired into the HTTP surface
+## 1.9 Batch pipelines — now reachable via `/v1/pipelines/*`
 
-The following modules are fully implemented Python classes with module-level singletons, but **no router calls them**. They are reachable only by importing them directly (e.g., from a script, notebook, or future endpoint):
+The following modules are fully implemented but have no natural scheduler in this repo (no Celery/cron exists here). Rather than leaving them reachable only via direct import/script invocation, each is now exposed as a manually-triggered endpoint under `routers/pipelines.py` (mounted at `/v1/pipelines`, same auth as every other router) — see [02 · API Reference §2.9](./02-api-reference.md#29-batch-pipelines-routerspipelinespy-prefix-v1pipelines) for full request/response detail:
 
-| Module | Singleton | Would be invoked by |
+| Module | Singleton | Reachable via |
 |---|---|---|
-| `behaviour/behavior_engine.py` | `behavior_engine` | Phase 6 batch job to populate `behavior_patterns` |
-| `clustering/cluster_engine.py` | `cluster_engine` | Phase 8 discovery pipeline |
-| `memory/decay_engine.py` | `decay_engine` | A scheduled sweep (no scheduler exists in this repo) |
-| `training/train.py` | `BaselineTrainer` (script entry point only) | Manual `python training/train.py` |
-| `training/finetune.py` | `FinetuneEngine` (script entry point only) | Manual `python training/finetune.py` |
-| `graphs/graph_builder.py` | `graph_engine` | No caller found anywhere in the repo |
-| `feedback/api_router.py` | mounted `router`, but **never `include_router`'d in `app.py`** | Not reachable over HTTP at all today |
+| `behaviour/behavior_engine.py` | `behavior_engine` | `POST /v1/pipelines/behavior/run`, `/run-all` |
+| `clustering/cluster_engine.py` | `cluster_engine` | `POST /v1/pipelines/clustering/run` (imported lazily so a missing `umap-learn`/`scikit-learn` install only breaks this endpoint) |
+| `memory/decay_engine.py` | `decay_engine` | `POST /v1/pipelines/decay/sweep` |
+| `graphs/graph_builder.py` | `graph_engine` | `POST /v1/pipelines/graph/build`, `GET /v1/pipelines/graph/neighborhood/{name}` |
+| `embeddings/*` + `milvus/insert_vectors.py` | n/a | `POST /v1/pipelines/embeddings/sync` |
+| `feedback/api_router.py` | `router` | Mounted in `app.py`; reachable at `/v1/feedback/` |
+| `training/train.py` | `BaselineTrainer` (script entry point only) | Manual `python training/train.py` — intentionally not exposed as an endpoint; see below |
+| `training/finetune.py` | `FinetuneEngine` (script entry point only) | Manual `python training/finetune.py` — intentionally not exposed as an endpoint; see below |
 
-This matters operationally: analytics endpoints (`/v1/analytics/subscriptions`, `/v1/analytics/anomaly/check`) read from the `behavior_patterns` collection, but nothing in the live HTTP path ever populates it — only the disconnected `behavior_engine.profile_merchant_behavior()` does. In a fresh environment, these analytics endpoints will return empty/degenerate results until someone runs the behavior engine out-of-band.
+`training/*` are deliberately **not** wired to an endpoint: both currently train on synthetic/mock data rather than real feedback, and `BaselineTrainer.run_benchmarks()` is a long-running, CPU-heavy synchronous job that would block the event loop if called from a request handler. Exposing either as-is would look "fixed" while actually being misleading — see [16 · Known Issues §16.5](./16-known-issues-tech-debt.md#165-whats-intentionally-still-open-productinfra-decisions-not-bugs).
+
+Operationally: in a fresh environment, run `POST /v1/pipelines/behavior/run-all` before expecting real results from `/v1/analytics/subscriptions` or `/v1/analytics/anomaly/check`, and run it followed by `POST /v1/pipelines/embeddings/sync` before expecting `/v1/explain` to retrieve real grounded context. Nothing runs these automatically yet — that requires a scheduler, which is a separate infra decision.

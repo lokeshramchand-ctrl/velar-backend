@@ -34,7 +34,7 @@ class BaselineTrainer:
             "LogisticRegression": LogisticRegression(max_iter=1000, class_weight='balanced'),
             "RandomForest": RandomForestClassifier(n_estimators=100, random_state=42, class_weight='balanced'),
             "LightGBM": LGBMClassifier(n_estimators=100, random_state=42, class_weight='balanced'),
-            "XGBoost": XGBClassifier(n_estimators=100, random_state=42, use_label_encoder=False, eval_metric='mlogloss')
+            "XGBoost": XGBClassifier(n_estimators=100, random_state=42, eval_metric='mlogloss')
         }
 
     def load_data(self) -> pd.DataFrame:

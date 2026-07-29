@@ -5,6 +5,7 @@ import random
 import logging
 
 from app import app
+from core.rate_limiter import limiter
 # =====================================================================
 # TEST LOGGER CONFIGURATION
 # =====================================================================
@@ -49,23 +50,28 @@ def test_security_missing_key(client):
     assert response.status_code in [401, 403]
     logger.info("System successfully blocked unauthorized access.")
 
-@pytest.mark.xfail(reason="TestClient bypasses actual ASGI network layer, preventing IP-based rate limiting in some configurations.")
 def test_rate_limiter_defense(client):
     """Fires 55 rapid requests to trigger the 50/minute SlowAPI limit."""
     logger.info("Firing rapid requests to test Rate Limiter defense...")
     blocked = False
-    
+
     # Mock a real IP address so SlowAPI has something to track in memory
     headers_with_ip = {**HEADERS, "X-Forwarded-For": "192.168.1.100"}
-    
-    for i in range(55):
-        res = client.post("/v1/categorize", json={"text": "test"}, headers=headers_with_ip)
-        if res.status_code == 429: # Too Many Requests
-            blocked = True
-            break
-            
-    assert blocked is True
-    logger.info("Rate limiter successfully caught and blocked spam traffic (HTTP 429).")
+
+    try:
+        for i in range(55):
+            res = client.post("/v1/categorize", json={"text": "test"}, headers=headers_with_ip)
+            if res.status_code == 429: # Too Many Requests
+                blocked = True
+                break
+
+        assert blocked is True
+        logger.info("Rate limiter successfully caught and blocked spam traffic (HTTP 429).")
+    finally:
+        # TestClient's remote address is identical for every request in this session
+        # (no real per-client IPs), so without a reset this test's hits would count
+        # against every other test sharing the module-scoped `client` fixture.
+        limiter.reset()
 
 # =====================================================================
 # PHASE 1-3: INGESTION & RESOLUTION (PARAMETERIZED)

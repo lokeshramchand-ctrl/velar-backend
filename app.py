@@ -5,6 +5,7 @@ from fastapi import FastAPI, Depends
 
 # Settings
 from core.config import settings
+from core.ollama_client import get_ollama_host
 
 # Middleware & Security
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -39,7 +40,7 @@ async def lifespan(app: FastAPI):
     await db.connect(uri=settings.MONGODB_URI, db_name=settings.MONGODB_DB_NAME)
 
     # Milvus
-    await vector_db.connect(uri=settings.MILVUS_URI)
+    vector_db.connect(uri=settings.MILVUS_URI)
     vector_store.ensure_collections()
 
     yield
@@ -107,7 +108,7 @@ async def health_check():
     # Ollama
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
-            resp = await client.get(settings.OLLAMA_URI)
+            resp = await client.get(get_ollama_host())
             if resp.status_code == 200:
                 ollama_status = "connected"
                 details["ollama"] = "Ollama engine responding."

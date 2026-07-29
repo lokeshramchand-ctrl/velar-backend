@@ -26,7 +26,7 @@ Four independent, stateless extractor classes, each exposed as a module-level si
 ### `features/amount_features.py` — `AmountExtractor.extract_statistical_metrics(amounts)`
 - Mean, median (average of the two middle values via `sorted[mid]` and `sorted[~mid]`, correct for both odd/even `n`), population variance (`/n`, not `/n-1`) and its square root.
 - **Amount entropy**: rounds each amount to the nearest 10 (`round(x, -1)`), buckets by that rounded value, then computes Shannon entropy (`-Σ p·log2(p)`) over the bucket distribution. This measures how "spread out" spend amounts are at a coarse ₹10 granularity — a merchant always charged exactly ₹499 has entropy ≈ 0; one with wildly varying amounts has higher entropy.
-- Empty input (`n == 0`) returns a differently-keyed dict (`avg`, `median`, `entropy` instead of `avg_amount`, `median_amount`, `entropy_score`) — see [03 · Data Model §3.4](./03-data-model.md#34-fieldvocabulary-inconsistencies-worth-knowing-before-writing-new-code) for why this is a latent (currently unreachable) bug.
+- ✅ **FIXED** — the empty-input (`n == 0`) branch now returns the same keys as the normal path (`avg_amount`, `median_amount`, `entropy_score`) — previously it returned a differently-named set (`avg`, `median`, `entropy`) that would have `KeyError`'d any caller without `behaviour/behavior_engine.py`'s empty-set guard. See [03 · Data Model §3.4](./03-data-model.md#34-fieldvocabulary-inconsistencies-worth-knowing-before-writing-new-code).
 
 ### `features/temporal_features.py` — `TemporalExtractor`
 - `get_time_bucket(hour)`: `morning` 05–11, `afternoon` 12–16, `evening` 17–20, `night` 21–04 (static method, also usable standalone).

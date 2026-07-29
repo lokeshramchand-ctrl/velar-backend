@@ -26,8 +26,9 @@ flowchart LR
 
 - Features: numeric `['amount', 'hour', 'frequency']`, categorical `['merchant', 'cluster_id', 'memory_state']` — this feature set directly mirrors what `behaviour/behavior_engine.py` and `clustering/cluster_engine.py` would produce if wired up, suggesting this trainer is meant to consume their combined output once the pipeline is connected end-to-end.
 - All four models use `class_weight='balanced'` (or XGBoost's implicit handling) to counter class imbalance in transaction category distributions.
-- `XGBClassifier` is constructed with `use_label_encoder=False` — a parameter removed in modern XGBoost versions; depending on the installed XGBoost version this may raise a `TypeError` at model construction. Verify against the pinned XGBoost version before running.
-- Results are printed as a Markdown table via `pandas.DataFrame.to_markdown()` (requires the `tabulate` package to be installed — not present in `requirements.txt`, see [14 · Deployment](./14-deployment-operations.md#141-python-dependencies)).
+- ✅ **FIXED** — `XGBClassifier` no longer passes `use_label_encoder=False`; this parameter was removed in modern XGBoost and would have raised a `TypeError` at model construction with the versions now pinned in `requirements.txt`.
+- ✅ **FIXED** — `tabulate` (required by `pandas.DataFrame.to_markdown()`) is now in `requirements.txt`, see [14 · Deployment](./14-deployment-operations.md#141-python-dependencies).
+- ✅ **Also fixed while touching this area**: `training/finetune.py`'s `TrainingArguments(evaluation_strategy="epoch")` was renamed to `eval_strategy="epoch"`, matching the argument name in `transformers==4.47.1` (the version now pinned).
 - The comment "In Phase 14, we will push these results directly to MLflow" confirms no MLflow integration exists yet despite `README.md` listing MLflow in the tech stack.
 
 ## 8.2 Evaluation metrics — `evaluation/metrics.py`

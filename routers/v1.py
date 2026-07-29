@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 import re
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from models.schemas import CategorizeRequest, CategorizeResponse , ResolutionResult
 from engines.rule_engine import rule_engine
@@ -9,21 +9,23 @@ from models.schemas import ConfidenceEvaluation
 import time
 from services.merchant_resolver import merchant_resolver
 from database.mongo import db
+from core.rate_limiter import limiter
 
 router = APIRouter(prefix="/v1", tags=["Transaction Intelligence"])
 
 @router.post("/categorize", response_model=CategorizeResponse)
-async def categorize_transaction(request: CategorizeRequest):
+@limiter.limit("50/minute")
+async def categorize_transaction(request: Request, payload: CategorizeRequest):
     # Phase 11 Foresight: We can track latency here later
     start_time = time.time()
-    
+
     # Process text through the Rule Engine
-    result = rule_engine.categorize(request.text)
-    
+    result = rule_engine.categorize(payload.text)
+
     process_time = time.time() - start_time
     # TODO: Log process_time to Prometheus for Latency metrics
     amount = 0.0
-    text_content = request.text
+    text_content = payload.text
     amount_match = re.search(r'₹\s*([0-9.,]+)', text_content)
     if amount_match:
         amount = float(amount_match.group(1).replace(',', ''))

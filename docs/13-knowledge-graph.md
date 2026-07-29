@@ -1,6 +1,6 @@
-# 13 · Knowledge Graph Layer (cross-phase, unwired)
+# 13 · Knowledge Graph Layer (cross-phase)
 
-`graphs/graph_builder.py` implements `KnowledgeGraphBuilder` (singleton `graph_engine`), a `networkx.DiGraph`-based model tying together every other subsystem's output. **No router, script, or other module in the repository calls `graph_engine.build_graph()` or `get_merchant_neighborhood()` anywhere** — this is the most "orphaned" module in the codebase; it isn't even referenced by the disconnected batch modules (`behavior_engine`, `cluster_engine`) the way they reference each other.
+`graphs/graph_builder.py` implements `KnowledgeGraphBuilder` (singleton `graph_engine`), a `networkx.DiGraph`-based model tying together every other subsystem's output. ✅ **Now reachable** via `POST /v1/pipelines/graph/build` and `GET /v1/pipelines/graph/neighborhood/{merchant_name}` (see [02 · API Reference §2.9](./02-api-reference.md#29-batch-pipelines-routerspipelinespy-prefix-v1pipelines)) — previously nothing in the repository called `build_graph()` or `get_merchant_neighborhood()` at all. The graph is still in-memory only (rebuilt from MongoDB on each `/build` call, not persisted), and nothing schedules a rebuild automatically — that still requires a cron/Celery beat, which doesn't exist in this repo (see [16 · Known Issues §16.5](./16-known-issues-tech-debt.md#165-whats-intentionally-still-open-productinfra-decisions-not-bugs)).
 
 ## 13.1 Graph schema
 

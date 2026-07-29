@@ -6,24 +6,14 @@ from enum import Enum
 class CoreModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
-class Merchant(CoreModel):
-    id: str = Field(alias="_id")
-    name: str
-    aliases: list[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-class Category(CoreModel):
-    id: str = Field(alias="_id")
-    name: str
-    description: Optional[str] = None
-
 class Transaction(CoreModel):
     id: Optional[str] = Field(alias="_id", default=None)
     raw_text: str
     merchant: Optional[str] = None
     amount: float
     category: Optional[str] = None
-    source: str
+    user_id: str = "system_user"
+    is_mock: bool = False
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class Feedback(CoreModel):
@@ -52,7 +42,7 @@ class ResolutionResult(BaseModel):
     canonical_merchant: str
     confidence: float
     is_resolved: bool
-    resolution_method: str = Field(description="exact_alias, substring, rule_engine, or none")
+    resolution_method: str = Field(description="exact_alias, substring, or none")
 
 
 class MemoryState(str, Enum):

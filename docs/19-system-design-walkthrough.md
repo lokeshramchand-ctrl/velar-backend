@@ -41,7 +41,7 @@ There is no frontend in this codebase. If a browser-based client existed, this s
 
 **A real, checkable architectural gap this surfaces**: Velar's `app.py` registers **no CORS middleware anywhere** (verified by grep in `docs/17-senior-architect-review.md §6`). If a browser-based frontend ever needs to call this API directly from a web page, every request will fail the browser's CORS preflight check. This is either a deliberate assumption ("only server-to-server callers, no browser client") or an unaddressed gap — the code gives no indication either way.
 
-**A real, checkable security concern this surfaces**: authentication is a single static shared string (`X-Velar-API-Key: velar_test_key_123`, hardcoded in `core/security.py`, see step 3). If a browser-based frontend were built against this API, that key would need to be embedded somewhere the browser can read it to attach to requests — which means it would be visible to anyone opening browser dev tools or viewing the page source/bundle. **Static API keys should never be embedded in browser-delivered code**; this authentication model is really only appropriate for server-to-server calls, not a public browser client. This is exactly the kind of thing worth raising unprompted in a system design interview: "given this auth model, what kind of client can safely call this API?"
+**A real, checkable security concern this surfaces**: authentication is a single static shared string (`X-Velar-API-Key`, checked against `settings.VELAR_API_KEY` in `core/security.py` using a constant-time comparison — previously hardcoded to the literal `velar_test_key_123` regardless of configuration, fixed, see [16 · Known Issues §16.2](./16-known-issues-tech-debt.md#162-high-previously-security--correctness-with-real-user-impact--all-fixed)). Even with that fixed, if a browser-based frontend were built against this API, the key would need to be embedded somewhere the browser can read it to attach to requests — which means it would be visible to anyone opening browser dev tools or viewing the page source/bundle. **Static API keys should never be embedded in browser-delivered code**; this authentication model is really only appropriate for server-to-server calls, not a public browser client. This is exactly the kind of thing worth raising unprompted in a system design interview: "given this auth model, what kind of client can safely call this API?"
 
 ## 3. Authentication
 
@@ -258,15 +258,13 @@ sequenceDiagram
 
     U->>Auth: POST /v1/categorize {"text": "paid 500 to swiggy"}
     Auth-->>Ctl: authenticated, proceed
-    Ctl->>RE: rule_engine.categorize(request.text)
+    Ctl->>RE: rule_engine.categorize(payload.text)
     RE-->>Ctl: {merchant: "Swiggy", category: "Food", confidence: 0.95}
-    Ctl->>Ctl: text_content = request.get("text", "")
-    Note over Ctl: CRASH: CategorizeRequest is a Pydantic model, has no .get() → AttributeError
-    Ctl--xMw: unhandled exception propagates up
-    Mw-->>U: 500 Internal Server Error (no custom error envelope — zero global exception handlers exist besides rate-limiting)
-    Note over U: Client sees a generic 500 with no actionable detail
+    Ctl->>Ctl: text_content = payload.text
+    Ctl->>Mw: persist transaction, return {merchant, category, confidence, transaction_id}
+    Mw-->>U: 200 OK
 ```
-Interview talking point: because this codebase has **no custom exception hierarchy and no global exception handler** beyond the one registered for rate-limiting (`docs/17-senior-architect-review.md §15`), every unhandled exception anywhere in any controller or service degrades to this same generic, uninformative 500 — a real production observability gap worth naming: "how would a client, or an on-call engineer, know *why* this failed?" The honest answer today is "only by reading server-side logs," since nothing in the response body says anything useful.
+✅ This handler previously crashed on every call (`request.get("text", "")` called `.get()` on a Pydantic model) — fixed, see [16 · Known Issues §16.1](./16-known-issues-tech-debt.md#161-critical-previously-broke-the-application-or-a-whole-feature--all-fixed). The underlying observability gap this originally illustrated is still real and worth knowing, though: this codebase has **no custom exception hierarchy and no global exception handler** beyond the one registered for rate-limiting (`docs/17-senior-architect-review.md §15`), so any *unhandled* exception anywhere in any controller or service — not just this now-fixed one — would still degrade to a generic, uninformative 500. Interview talking point: "how would a client, or an on-call engineer, know *why* an unhandled failure happened?" The honest answer today is "only by reading server-side logs," since nothing in the response body says anything useful.
 
 ---
 
