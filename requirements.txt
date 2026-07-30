@@ -38,6 +38,20 @@ prometheus-fastapi-instrumentator==8.1.0
 # HTTP client (Ollama, health checks)
 httpx==0.28.1
 
+# Authentication (core/jwt_auth.py, core/security.py, routers/auth.py)
+# PyJWT: access-token signing/verification (HS256). Refresh tokens are
+# deliberately NOT JWTs - see core/jwt_auth.py::generate_refresh_token - so
+# no asymmetric-key/JWKS machinery is needed here.
+PyJWT==2.13.0
+# argon2-cffi: OWASP's current #1 recommended password hashing algorithm
+# (Argon2id), actively maintained. Preferred over passlib's bcrypt wrapper,
+# which has had repeated compatibility breaks against newer bcrypt releases.
+argon2-cffi==25.1.0
+# email-validator: required at import time by pydantic's EmailStr, used on
+# RegisterRequest/LoginRequest to reject malformed addresses before they
+# ever reach the database.
+email-validator==2.3.0
+
 # Databases
 motor==3.6.0
 pymongo==4.9.2

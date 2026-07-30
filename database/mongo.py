@@ -33,6 +33,8 @@ class MongoDB:
         cls.merchant_profiles = cls.db.get_collection("merchant_profiles")
         cls.behavior_patterns = cls.db.get_collection("behavior_patterns")
         cls.retraining_queue = cls.db.get_collection("retraining_queue")
+        cls.users = cls.db.get_collection("users")
+        cls.refresh_tokens = cls.db.get_collection("refresh_tokens")
 
         logger.info(f"MongoDB connected to {uri}/{db_name}")
 
@@ -63,6 +65,22 @@ class MongoDB:
             await cls.feedback.create_index("merchant_name", background=True)
             await cls.feedback.create_index("transaction_id", background=True)
             await cls.retraining_queue.create_index("status", background=True)
+
+            # Auth (database/mongo.py, repositories/user_repository.py,
+            # repositories/refresh_token_repository.py). Uniqueness on email
+            # is the real backstop against the register-race two concurrent
+            # signups for the same address (the app-level pre-check in
+            # routers/auth.py is just the fast, common-case path). token_hash
+            # is looked up on every refresh call, so it needs an index for
+            # more than correctness - unique because a hash collision would
+            # otherwise let one stored token match two documents. The TTL
+            # index on expires_at lets MongoDB itself sweep expired refresh
+            # tokens instead of needing a separate cleanup job.
+            await cls.users.create_index("email", unique=True, background=True)
+            await cls.refresh_tokens.create_index("token_hash", unique=True, background=True)
+            await cls.refresh_tokens.create_index("user_id", background=True)
+            await cls.refresh_tokens.create_index("expires_at", expireAfterSeconds=0, background=True)
+
             logger.info("MongoDB indexes ensured.")
         except Exception:
             logger.warning("Failed to ensure one or more MongoDB indexes - continuing without them.", exc_info=True)

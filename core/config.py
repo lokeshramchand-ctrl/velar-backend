@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -11,6 +12,15 @@ class Settings(BaseSettings):
     LLM_MODEL: str
     VELAR_API_KEY: str
 
+    # JWT user authentication (core/jwt_auth.py, routers/auth.py). Distinct
+    # from VELAR_API_KEY above: the API key authenticates the calling
+    # application, JWT_SECRET_KEY signs per-user access tokens issued after
+    # login - see docs/01-architecture.md §1.8.
+    JWT_SECRET_KEY: str
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
+    JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
+
     # Operational settings (all have safe production-appropriate defaults)
     ENVIRONMENT: str = "production"  # "production" | "development"
     LOG_LEVEL: str = "INFO"  # DEBUG is opt-in, never the default - DEBUG logs full DB command payloads
@@ -19,6 +29,22 @@ class Settings(BaseSettings):
     MONGODB_CONNECT_TIMEOUT_MS: int = 5000
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
+    @field_validator("JWT_SECRET_KEY")
+    @classmethod
+    def _require_strong_jwt_secret(cls, v: str) -> str:
+        # Fails app startup immediately rather than letting a short/weak
+        # secret (e.g. a copy-pasted placeholder) silently sign real tokens -
+        # same "fail fast on a bad mandatory secret" posture as every other
+        # required setting above, extended to also cover *weak* values since
+        # a present-but-trivial signing key is just as dangerous as a missing
+        # one. 32 bytes matches common guidance for HS256 signing keys.
+        if len(v) < 32:
+            raise ValueError(
+                "JWT_SECRET_KEY must be at least 32 characters long "
+                "(generate one with: openssl rand -hex 32)"
+            )
+        return v
 
     @property
     def ollama_hosts_list(self) -> list[str]:

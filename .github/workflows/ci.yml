@@ -86,6 +86,7 @@ jobs:
       EMBED_MODEL: "nomic-embed-text"
       LLM_MODEL: "llama3"
       VELAR_API_KEY: "ci_test_key"
+      JWT_SECRET_KEY: "ci_test_jwt_signing_key_at_least_32_characters_long"
       LOG_LEVEL: "WARNING"
     steps:
       - uses: actions/checkout@v4

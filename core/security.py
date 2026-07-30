@@ -1,6 +1,8 @@
 import logging
 import secrets
 
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from fastapi import HTTPException, Security, status
 from fastapi.security.api_key import APIKeyHeader
 
@@ -10,6 +12,26 @@ logger = logging.getLogger(__name__)
 
 API_KEY_NAME = "X-Velar-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
+# Argon2id (the library's default variant) with its built-in, OWASP-aligned
+# default cost parameters - the current recommended password hashing
+# algorithm, ahead of bcrypt/PBKDF2. Salting and constant-time verification
+# are handled internally by the library, not hand-rolled here.
+_password_hasher = PasswordHasher()
+
+
+def hash_password(password: str) -> str:
+    return _password_hasher.hash(password)
+
+
+def verify_password(password: str, hashed_password: str) -> bool:
+    """Constant-time-verified against the stored hash. Returns False for any
+    mismatch or malformed/foreign hash rather than raising, so callers never
+    need to special-case a corrupt stored value vs. a genuinely wrong password."""
+    try:
+        return _password_hasher.verify(hashed_password, password)
+    except (VerifyMismatchError, InvalidHashError):
+        return False
 
 async def validate_api_key(api_key_header: str = Security(api_key_header)) -> str:
     """

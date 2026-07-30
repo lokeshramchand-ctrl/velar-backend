@@ -1,11 +1,69 @@
 from datetime import UTC, datetime
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 class CoreModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
+
+
+class User(CoreModel):
+    """Persisted shape of a `users` document. `hashed_password` never leaves
+    this model - API responses use `UserPublic` instead (see below)."""
+    id: str | None = Field(alias="_id", default=None)
+    email: EmailStr
+    hashed_password: str
+    is_active: bool = True
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class UserPublic(BaseModel):
+    """Safe, external-facing view of a User - deliberately a separate model
+    (not User with a field excluded) so a future field added to User can
+    never leak into a response by accident."""
+    id: str
+    email: EmailStr
+    is_active: bool
+    created_at: datetime
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        # Prevents "Foo@x.com" and "foo@x.com" from registering as two
+        # distinct accounts against the case-sensitive unique index on email.
+        return v.lower()
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=1, max_length=128)
+
+    @field_validator("email")
+    @classmethod
+    def _normalize_email(cls, v: str) -> str:
+        return v.lower()
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int = Field(description="Access token lifetime in seconds")
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=1, max_length=1024)
+
+
+class LogoutRequest(BaseModel):
+    refresh_token: str = Field(..., min_length=1, max_length=1024)
 
 class Transaction(CoreModel):
     id: str | None = Field(alias="_id", default=None)

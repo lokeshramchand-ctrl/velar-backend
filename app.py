@@ -23,7 +23,7 @@ from feedback.api_router import router as feedback_router
 from milvus.insert_vectors import vector_store
 
 # Routers
-from routers import analytics, memory, pipelines, rag, v1
+from routers import analytics, auth, memory, pipelines, rag, v1
 from routers.observability import router as observability_router
 
 # Logging
@@ -86,6 +86,14 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 
 
 # Routers (secured)
+# Every router is mounted behind the shared X-Velar-API-Key dependency,
+# regardless of whether any of its handlers also require a per-user JWT
+# (core/jwt_auth.py::get_current_user, applied at the handler level where
+# needed - see routers/auth.py, routers/v1.py, routers/analytics.py,
+# feedback/api_router.py). The API key authenticates the calling
+# application; JWT authenticates the end user within it. A JWT alone, without
+# the API key, is rejected here before a handler ever runs.
+app.include_router(auth.router, dependencies=[Depends(validate_api_key)])
 app.include_router(v1.router, dependencies=[Depends(validate_api_key)])
 app.include_router(memory.router, dependencies=[Depends(validate_api_key)])
 app.include_router(analytics.router, dependencies=[Depends(validate_api_key)])
