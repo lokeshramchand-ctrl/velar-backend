@@ -54,7 +54,7 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
-    token_type: str = "bearer"
+    token_type: str = "bearer"  # noqa: S105 - the OAuth2/RFC 6750 scheme name, not a credential
     expires_in: int = Field(description="Access token lifetime in seconds")
 
 

@@ -83,6 +83,32 @@ Backing collection: `merchant_profiles`. Written/read exclusively through `repos
 
 Backing collection: `behavior_patterns`. Written only by `behaviour/behavior_engine.py` (not wired to any HTTP endpoint — see [01 · Architecture §1.9](./01-architecture.md#19-what-is-not-wired-into-the-http-surface)). Also gains a non-schema field `discovered_cluster` when written by `clustering/cluster_engine.py::_persist_clusters` (Mongo is schemaless at the driver level, so this is a silent extension not reflected in the Pydantic model).
 
+### `User`
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `Optional[str]` (alias `_id`) | Mongo's own ObjectId, stringified — this is the value encoded as the JWT `sub` claim |
+| `email` | `EmailStr` | Lowercased before storage (see `RegisterRequest`/`LoginRequest`); unique index, see §3.2 |
+| `hashed_password` | `str` | Argon2id hash (`core/security.py::hash_password`) — never serialized in any API response |
+| `is_active` | `bool` | default `True` |
+| `created_at`, `updated_at` | `datetime` | default now (UTC) |
+
+`UserPublic` is the response-safe counterpart — a deliberately separate model (not `User` with a field excluded) so a future field added to `User` can never leak into a response by accident: `{ id, email, is_active, created_at }`.
+
+Backing collection: `users`. Written/read exclusively through `repositories/user_repository.py`.
+
+### Refresh token documents
+Not a Pydantic model — `repositories/refresh_token_repository.py` writes/reads plain dicts directly, since nothing outside that repository ever needs to construct or validate one.
+
+| Field | Type | Notes |
+|---|---|---|
+| `user_id` | `str` | References `User.id` |
+| `token_hash` | `str` | SHA-256 hex digest of the opaque refresh token; the raw token itself is never persisted |
+| `expires_at` | `datetime` | Backs the TTL index, see §3.2 |
+| `created_at` | `datetime` | |
+| `revoked_at` | `Optional[datetime]` | `None` while active; set on rotation, logout, or reuse-detection mass-revocation |
+
+Backing collection: `refresh_tokens`.
+
 ## 3.2 MongoDB collections
 
 Declared in `database/mongo.py::MongoDB.connect`:
@@ -96,8 +122,16 @@ Declared in `database/mongo.py::MongoDB.connect`:
 | `merchant_profiles` | `repositories/profile_repository.py` | `repositories/profile_repository.py`, `rag/retriever.py`, `graphs/graph_builder.py` |
 | `behavior_patterns` | `behaviour/behavior_engine.py`, `clustering/cluster_engine.py` (adds `discovered_cluster`) | `analytics/anomaly_detection.py`, `analytics/subscriptions.py`, `rag/retriever.py`, `graphs/graph_builder.py` |
 | `retraining_queue` | `feedback/retraining_queue.py` (via `feedback_service`) | `feedback/retraining_queue.py::check_retraining_status` |
+| `users` | `repositories/user_repository.py` | `repositories/user_repository.py`, `core/jwt_auth.py::get_current_user` |
+| `refresh_tokens` | `repositories/refresh_token_repository.py` | `repositories/refresh_token_repository.py` |
 
-No indexes are created programmatically anywhere in this codebase (no `create_index` calls) — all queries above run against unindexed collections by default.
+`database/mongo.py::ensure_indexes()` (called once from `app.py`'s `lifespan`) creates indexes for every query pattern that actually needs one, including the auth collections added here:
+- `users.email` — unique (backs the register-time uniqueness guarantee; also what every login/`/auth/me` lookup queries on)
+- `refresh_tokens.token_hash` — unique (looked up on every `/auth/refresh` call)
+- `refresh_tokens.user_id` — supports the mass-revocation query used on logout-all/reuse-detection
+- `refresh_tokens.expires_at` — TTL index (`expireAfterSeconds=0`), so MongoDB itself sweeps expired refresh token documents without a separate cleanup job
+
+See [22 · Authentication §22.7](./22-authentication.md#227-data-model) for how these back the auth flows.
 
 ## 3.3 Milvus vector schema
 

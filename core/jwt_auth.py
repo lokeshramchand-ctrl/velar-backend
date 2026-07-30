@@ -21,7 +21,7 @@ bearer_scheme = HTTPBearer(
     auto_error=False,
 )
 
-ACCESS_TOKEN_TYPE = "access"
+ACCESS_TOKEN_TYPE = "access"  # noqa: S105 - a JWT "type" claim value, not a credential
 
 
 def create_access_token(user_id: str) -> tuple[str, int]:

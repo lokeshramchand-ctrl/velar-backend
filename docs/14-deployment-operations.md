@@ -42,6 +42,10 @@ services:
       - EMBED_MODEL=${EMBED_MODEL:?EMBED_MODEL must be set}
       - LLM_MODEL=${LLM_MODEL:?LLM_MODEL must be set}
       - VELAR_API_KEY=${VELAR_API_KEY:?VELAR_API_KEY must be set}
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?JWT_SECRET_KEY must be set}
+      - JWT_ALGORITHM=${JWT_ALGORITHM:-HS256}
+      - JWT_ACCESS_TOKEN_EXPIRE_MINUTES=${JWT_ACCESS_TOKEN_EXPIRE_MINUTES:-15}
+      - JWT_REFRESH_TOKEN_EXPIRE_DAYS=${JWT_REFRESH_TOKEN_EXPIRE_DAYS:-30}
     networks: [coolify]   # external network, implies deployment via Coolify PaaS
 ```
 ✅ **FIXED — both issues.** This file previously committed a plaintext MongoDB username/password directly in the connection string, and used env var names (`MONGO_URI`, `MONGO_DB_NAME`, `MILVUS_HOST`, `MILVUS_PORT`) that didn't match what `core/config.py` reads. It now sources every value via `${VAR:?required}`/`${VAR:-default}` substitution from a compose `.env` file or the host/CI secret store, with names matching `Settings` exactly. See [Known Issues §16.2–16.3](./16-known-issues-tech-debt.md).
@@ -61,8 +65,12 @@ OLLAMA_HOSTS=http://host1:11434,http://host2:11434
 EMBED_MODEL=<ollama embedding model name>
 LLM_MODEL=<ollama generation model name>
 VELAR_API_KEY=<enforced on every non-public route via X-Velar-API-Key>
+JWT_SECRET_KEY=<required, min 32 chars - app fails to start otherwise; generate with: openssl rand -hex 32>
+JWT_ALGORITHM=HS256                   # optional, default shown
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=15    # optional, default shown
+JWT_REFRESH_TOKEN_EXPIRE_DAYS=30      # optional, default shown
 ```
-Place this file at the repo root as `.env` for local development (loaded via `pydantic_settings`'s `env_file=".env"`); for containerized deployment, either mount/inject it or set each variable directly in the container environment (aligning names exactly — see the mismatch warning above for `docker-compose_production.yaml`).
+Place this file at the repo root as `.env` for local development (loaded via `pydantic_settings`'s `env_file=".env"`); for containerized deployment, either mount/inject it or set each variable directly in the container environment (aligning names exactly — see the mismatch warning above for `docker-compose_production.yaml`). See [22 · Authentication](./22-authentication.md) for what `JWT_SECRET_KEY` signs and why a short/missing value fails startup rather than silently falling back to something insecure.
 
 ## 14.5 Bootstrapping data (manual, out-of-band steps)
 
