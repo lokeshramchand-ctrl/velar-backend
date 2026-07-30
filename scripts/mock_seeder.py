@@ -32,7 +32,7 @@ async def seed():
         days_ago = random.randint(0, 60)
 
         mock_transactions.append({
-            "user_id": "user_123", # Matches the TEST_USER in analytics.py
+            "user_id": "user_123", # Local mock id - not tied to a real registered account
             "merchant": merchant,
             "category": category,
             "amount": amount,
