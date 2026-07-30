@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 
 from bson import ObjectId
 from bson.errors import InvalidId
+from pymongo import ReturnDocument
 
 from database.mongo import db
 from models.schemas import User
@@ -43,6 +44,17 @@ class UserRepository:
         }
         result = await db.users.insert_one(doc)
         doc["_id"] = str(result.inserted_id)
+        return User(**doc)
+
+    async def update_full_name(self, user_id: str, full_name: str) -> User | None:
+        doc = await db.users.find_one_and_update(
+            {"_id": ObjectId(user_id)},
+            {"$set": {"full_name": full_name, "updated_at": datetime.now(UTC)}},
+            return_document=ReturnDocument.AFTER,
+        )
+        if not doc:
+            return None
+        doc["_id"] = str(doc["_id"])
         return User(**doc)
 
 user_repo = UserRepository()

@@ -2,38 +2,27 @@ import hashlib
 import logging
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pymongo.errors import DuplicateKeyError
 
-from core.jwt_auth import create_access_token, generate_refresh_token, get_current_user
+from core.jwt_auth import create_access_token, generate_refresh_token
 from core.rate_limiter import limiter
 from core.security import hash_password, verify_password
-from models.schemas import (
-    LoginRequest,
-    LogoutRequest,
-    RefreshRequest,
-    RegisterRequest,
-    TokenResponse,
-    User,
-    UserPublic,
-)
+from models.schemas import LoginRequest, LogoutRequest, RefreshRequest, RegisterRequest, TokenResponse, UserPublic
 from repositories.refresh_token_repository import refresh_token_repo
 from repositories.user_repository import user_repo
 
 logger = logging.getLogger(__name__)
 
+# Purely about token lifecycle (register/login/refresh/logout) - "who is the
+# currently authenticated user" lives at GET/PATCH /users/me
+# (routers/users.py) instead, a more RESTful home for profile access than an
+# auth/token router.
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
 def _hash_refresh_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode()).hexdigest()
-
-
-def _to_public(user: User) -> UserPublic:
-    # Explicit field-by-field mapping rather than UserPublic(**user.model_dump())
-    # so a future field added to User (e.g. an MFA secret) can never leak into
-    # a response just because someone forgot to also update this function.
-    return UserPublic(id=user.id, email=user.email, is_active=user.is_active, created_at=user.created_at)
 
 
 async def _issue_token_pair(user_id: str) -> TokenResponse:
@@ -68,7 +57,7 @@ async def register(request: Request, payload: RegisterRequest):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email is already registered") from e
 
     logger.info("New user account registered.")
-    return _to_public(user)
+    return user.to_public()
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -132,8 +121,3 @@ async def logout(request: Request, payload: LogoutRequest):
     deliberately doesn't require a still-valid access token - a client whose
     access token already expired must still be able to log out."""
     await refresh_token_repo.revoke(_hash_refresh_token(payload.refresh_token))
-
-
-@router.get("/me", response_model=UserPublic)
-async def get_me(current_user: User = Depends(get_current_user)):
-    return _to_public(current_user)

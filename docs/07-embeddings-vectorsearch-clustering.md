@@ -54,7 +54,7 @@ flowchart TD
 ### ✅ Also fixed while touching this file: Milvus client consolidation
 `VectorStoreManager` (`milvus/insert_vectors.py`) no longer opens its own `MilvusClient` connection at import time — it now delegates to the single client owned by `database.milvus.vector_db` via a `client` property, with a new `ensure_collections()` called once from the app `lifespan`. This also closes a real stability gap: the old eager-connect-at-import made a **blocking network call at module-import time with no retry**, so importing this module while Milvus was briefly unreachable used to crash the entire app, not just this feature. See [Known Issues §16.3](./16-known-issues-tech-debt.md#163-medium-previously-disconnected-features-dead-code-silent-no-ops--fixed).
 
-Phase 8 is now reachable via `POST /v1/pipelines/clustering/run` (see [02 · API Reference §2.9](./02-api-reference.md#29-batch-pipelines-routerspipelinespy-prefix-v1pipelines)), imported lazily inside that handler so a missing/broken `scikit-learn`/`umap-learn` install only breaks that one endpoint, not app startup.
+Phase 8 is now reachable via `POST /v1/pipelines/clustering/run` (see [02 · API Reference §2.13](./02-api-reference.md#213-batch-pipelines-routerspipelinespy-prefix-v1pipelines)), imported lazily inside that handler so a missing/broken `scikit-learn`/`umap-learn` install only breaks that one endpoint, not app startup.
 
 ## 7.5 Why this matters for RAG and analytics
 

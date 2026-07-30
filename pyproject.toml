@@ -24,13 +24,19 @@ ignore = [
 ]
 
 [tool.ruff.lint.flake8-bugbear]
-# fastapi.Query already gets this treatment from ruff's own defaults; Depends
-# and Security don't, even though the same "call in a default expression is
-# actually fine here, FastAPI evaluates it once per request via its DI
-# system" reasoning applies identically. Needed anywhere a resolved
-# dependency (e.g. core/jwt_auth.py::get_current_user) is bound to a handler
-# parameter instead of just listed in include_router(dependencies=[...]).
-extend-immutable-calls = ["fastapi.Depends", "fastapi.Security"]
+# ruff's own B008 defaults only recognize fastapi.Query/File/Form as safe
+# when the annotated parameter type is a plain builtin (str, int, etc.) -
+# confirmed empirically: `x: str | None = Query(None)` passes by default,
+# but `x: SomeEnum | None = Query(None)` does not, even though FastAPI
+# evaluates both identically once per request via its DI system. This
+# codebase has real, recurring typed query params over its own enums
+# (StatementStatus, TransactionType - routers/statements.py) and file
+# uploads (UploadFile - routers/statements.py), so all of these plus
+# Depends/Security (which get no default exemption at all) are listed
+# explicitly rather than working around it per call site.
+extend-immutable-calls = [
+    "fastapi.Depends", "fastapi.Security", "fastapi.Query", "fastapi.File", "fastapi.Form",
+]
 
 [tool.ruff.lint.per-file-ignores]
 "test_api.py" = ["S101", "S105", "S106", "S107", "S311"]  # asserts, test fixture "keys", and non-crypto random test data

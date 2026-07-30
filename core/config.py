@@ -24,7 +24,14 @@ class Settings(BaseSettings):
     # Operational settings (all have safe production-appropriate defaults)
     ENVIRONMENT: str = "production"  # "production" | "development"
     LOG_LEVEL: str = "INFO"  # DEBUG is opt-in, never the default - DEBUG logs full DB command payloads
-    MAX_REQUEST_BODY_BYTES: int = 1_000_000  # 1 MB - rejects oversized request bodies before parsing
+    # Raised from the original 1 MB (fine when every request was a JSON body)
+    # to accommodate multipart PDF statement uploads - see POST /statements/upload.
+    # MAX_STATEMENT_PDF_BYTES below is the tighter, upload-specific ceiling
+    # checked in routers/statements.py for a clearer, PDF-specific error
+    # message; this middleware-level limit is the outer backstop for every
+    # request body regardless of route.
+    MAX_REQUEST_BODY_BYTES: int = 15_000_000  # 15 MB
+    MAX_STATEMENT_PDF_BYTES: int = 10_000_000  # 10 MB
     MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = 5000
     MONGODB_CONNECT_TIMEOUT_MS: int = 5000
 

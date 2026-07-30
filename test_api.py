@@ -1,4 +1,6 @@
+import io
 import logging
+import os
 import random
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -8,11 +10,14 @@ import pymongo
 import pytest
 from bson import ObjectId
 from fastapi.testclient import TestClient
+from pypdf import PdfWriter
 
 from app import app
 from core.config import settings
 from core.jwt_auth import create_access_token
 from core.rate_limiter import limiter
+
+MOCK_STATEMENT_PATH = os.path.join(os.path.dirname(__file__), "mock", "gpay_statement_20260101_20260630.pdf")
 
 # =====================================================================
 # TEST LOGGER CONFIGURATION
@@ -273,10 +278,10 @@ def test_auth_full_lifecycle(client):
     wrong_password_res = client.post("/auth/login", json={"email": email, "password": "WrongPassword!"}, headers=HEADERS)
     assert wrong_password_res.status_code == 401
 
-    me_res = client.get("/auth/me", headers={**HEADERS, "Authorization": f"Bearer {access_token}"})
+    me_res = client.get("/users/me", headers={**HEADERS, "Authorization": f"Bearer {access_token}"})
     assert me_res.status_code == 200
     assert me_res.json()["email"] == email
-    logger.info("Authenticated /auth/me returned the correct identity.")
+    logger.info("Authenticated /users/me returned the correct identity.")
 
     refresh_res = client.post("/auth/refresh", json={"refresh_token": refresh_token}, headers=HEADERS)
     assert refresh_res.status_code == 200
@@ -339,14 +344,14 @@ def test_auth_logout_is_idempotent(client):
     assert response.status_code == 204
 
 def test_auth_me_missing_token(client):
-    logger.info("Testing /auth/me with no bearer token at all.")
-    response = client.get("/auth/me", headers=HEADERS)
+    logger.info("Testing /users/me with no bearer token at all.")
+    response = client.get("/users/me", headers=HEADERS)
     assert response.status_code == 401
     assert response.headers.get("www-authenticate") == "Bearer"
 
 def test_auth_me_valid_token(client, auth_user):
-    logger.info("Testing /auth/me with a genuinely valid access token.")
-    response = client.get("/auth/me", headers={**HEADERS, "Authorization": f"Bearer {auth_user['access_token']}"})
+    logger.info("Testing /users/me with a genuinely valid access token.")
+    response = client.get("/users/me", headers={**HEADERS, "Authorization": f"Bearer {auth_user['access_token']}"})
     assert response.status_code == 200
     data = response.json()
     assert data["id"] == auth_user["user_id"]
@@ -354,32 +359,32 @@ def test_auth_me_valid_token(client, auth_user):
     assert "hashed_password" not in data
 
 def test_auth_me_expired_token(client, auth_user):
-    logger.info("Testing /auth/me with a signature-valid but expired access token.")
+    logger.info("Testing /users/me with a signature-valid but expired access token.")
     expired = _craft_token(auth_user["user_id"], timedelta(minutes=-5))
-    response = client.get("/auth/me", headers={**HEADERS, "Authorization": f"Bearer {expired}"})
+    response = client.get("/users/me", headers={**HEADERS, "Authorization": f"Bearer {expired}"})
     assert response.status_code == 401
     assert "expired" in response.json()["error"]["detail"].lower()
     logger.info("Expired access token correctly rejected.")
 
 def test_auth_me_invalid_signature(client, auth_user):
-    logger.info("Testing /auth/me with a token signed by the wrong key.")
+    logger.info("Testing /users/me with a token signed by the wrong key.")
     forged = _craft_token(auth_user["user_id"], timedelta(minutes=5), secret="a-completely-different-signing-key-xx")
-    response = client.get("/auth/me", headers={**HEADERS, "Authorization": f"Bearer {forged}"})
+    response = client.get("/users/me", headers={**HEADERS, "Authorization": f"Bearer {forged}"})
     assert response.status_code == 401
     logger.info("Token with an invalid signature correctly rejected.")
 
 def test_auth_me_malformed_token(client):
-    logger.info("Testing /auth/me with a token that isn't a JWT at all.")
-    response = client.get("/auth/me", headers={**HEADERS, "Authorization": "Bearer not.a.jwt"})
+    logger.info("Testing /users/me with a token that isn't a JWT at all.")
+    response = client.get("/users/me", headers={**HEADERS, "Authorization": "Bearer not.a.jwt"})
     assert response.status_code == 401
 
 def test_auth_me_wrong_token_type(client, auth_user):
     """A token that's structurally valid and correctly signed, but issued as
     a non-access type, must still be rejected - proves the `type` claim is
     actually checked, not just the signature."""
-    logger.info("Testing /auth/me with a correctly-signed non-access token.")
+    logger.info("Testing /users/me with a correctly-signed non-access token.")
     wrong_type = _craft_token(auth_user["user_id"], timedelta(minutes=5), token_type="refresh")
-    response = client.get("/auth/me", headers={**HEADERS, "Authorization": f"Bearer {wrong_type}"})
+    response = client.get("/users/me", headers={**HEADERS, "Authorization": f"Bearer {wrong_type}"})
     assert response.status_code == 401
 
 def test_auth_forbidden_disabled_account(client):
@@ -406,7 +411,7 @@ def test_auth_forbidden_disabled_account(client):
     finally:
         mongo_client.close()
 
-    response = client.get("/auth/me", headers={**HEADERS, "Authorization": f"Bearer {token}"})
+    response = client.get("/users/me", headers={**HEADERS, "Authorization": f"Bearer {token}"})
     assert response.status_code == 403
     logger.info("Disabled account correctly rejected with 403 Forbidden (not 401).")
 
@@ -422,3 +427,207 @@ def test_categorize_and_analytics_reject_jwt_without_api_key(client, auth_user):
     )
     assert response.status_code in [401, 403]
     logger.info("Bare JWT without the API key correctly rejected.")
+
+# =====================================================================
+# PHASE 17: STATEMENT INGESTION
+# (Google Pay PDF -> Transactions -> Analytics -> AI Insights)
+# =====================================================================
+#
+# mock/gpay_statement_20260101_20260630.pdf is a real, anonymized Google Pay
+# statement (19 pages, 184 transactions, 01 Jan - 30 Jun 2026) used directly
+# as test data rather than a synthetic fixture - see docs/23-statements-pipeline.md
+# for how its exact format shaped statements/pdf_parser.py's regex design.
+# Known-good values below (184 transactions, declared totals) come from
+# actually parsing this file, not assumptions.
+
+def _auth_headers_no_content_type(auth_user):
+    """Multipart uploads must not carry the JSON Content-Type from HEADERS -
+    httpx sets the correct multipart boundary header itself."""
+    return {"X-Velar-API-Key": VALID_API_KEY, "Authorization": f"Bearer {auth_user['access_token']}"}
+
+def _upload_mock_statement(client, auth_user, password=None):
+    with open(MOCK_STATEMENT_PATH, "rb") as f:
+        files = {"file": ("gpay_statement.pdf", f, "application/pdf")}
+        data = {"password": password} if password else {}
+        return client.post(
+            "/statements/upload", files=files, data=data, headers=_auth_headers_no_content_type(auth_user)
+        )
+
+@pytest.fixture(scope="module")
+def processed_statement(client, auth_user):
+    """Uploads the real mock statement once for this module. TestClient runs
+    FastAPI BackgroundTasks synchronously as part of the request/response
+    cycle, so by the time this returns, statement_service.process_statement
+    has already completed (or failed) - the same established pattern already
+    relied on by test_feedback_triggers_retraining_queue's background task."""
+    logger.info("Uploading the real mock Google Pay statement for the statement-pipeline test module.")
+    response = _upload_mock_statement(client, auth_user)
+    assert response.status_code == 202, response.text
+    body = response.json()
+    return {"statement_id": body["statement_id"], "job_id": body["job_id"]}
+
+def test_statement_upload_returns_202(client, auth_user):
+    logger.info("Testing statement upload accepts the real mock PDF and returns 202.")
+    response = _upload_mock_statement(client, auth_user)
+    assert response.status_code == 202
+    body = response.json()
+    assert "statement_id" in body
+    assert "job_id" in body
+    assert body["status"] in ["PENDING", "PROCESSING", "COMPLETED"]
+
+def test_statement_job_completes(client, auth_user, processed_statement):
+    logger.info("Polling GET /jobs/{id} for the processed statement's job.")
+    response = client.get(f"/jobs/{processed_statement['job_id']}", headers=_auth_headers_no_content_type(auth_user))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "COMPLETED"
+    assert data["progress_percent"] == 100
+    logger.info("Job completed successfully.")
+
+def test_statement_detail_reconciles_against_real_document(client, auth_user, processed_statement):
+    logger.info("Verifying parsed statement detail reconciles against the real PDF's declared totals.")
+    response = client.get(
+        f"/statements/{processed_statement['statement_id']}", headers=_auth_headers_no_content_type(auth_user)
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["processing_status"] == "COMPLETED"
+    assert data["transaction_count"] == 184
+    assert data["reconciliation_ok"] is True
+    assert data["period_start"] == "2026-01-01"
+    assert data["period_end"] == "2026-06-30"
+    assert data["declared_sent_amount"] == 80634.04
+    assert data["computed_sent_amount"] == 80634.04
+    assert data["declared_received_amount"] == 28975.0
+    assert data["computed_received_amount"] == 28975.0
+    logger.info("Computed Sent/Received exactly reconcile against the statement's own declared totals.")
+
+def test_statement_transactions_pagination_and_filtering(client, auth_user, processed_statement):
+    logger.info("Testing statement transactions pagination and transaction_type filtering.")
+    headers = _auth_headers_no_content_type(auth_user)
+    statement_id = processed_statement["statement_id"]
+
+    page_res = client.get(f"/statements/{statement_id}/transactions?page=1&page_size=10", headers=headers)
+    assert page_res.status_code == 200
+    page_data = page_res.json()
+    assert len(page_data["items"]) == 10
+    assert page_data["total"] == 184
+    assert page_data["total_pages"] == 19
+
+    credit_res = client.get(
+        f"/statements/{statement_id}/transactions?transaction_type=CREDIT&page_size=100", headers=headers
+    )
+    assert credit_res.status_code == 200
+    credit_data = credit_res.json()
+    assert credit_data["total"] > 0
+    assert all(item["transaction_type"] == "CREDIT" for item in credit_data["items"])
+    logger.info(f"CREDIT filter returned {credit_data['total']} transactions, all correctly typed.")
+
+def test_statement_analytics(client, auth_user, processed_statement):
+    logger.info("Testing GET /statements/{id}/analytics reflects persisted, precomputed analytics.")
+    response = client.get(
+        f"/statements/{processed_statement['statement_id']}/analytics", headers=_auth_headers_no_content_type(auth_user)
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["transaction_count"] == 184
+    assert data["failed_transaction_count"] == 0  # Google Pay statements never encode failures - see pdf_parser
+    assert data["total_spend"] > 0
+    assert data["total_income"] > 0
+    assert len(data["category_breakdown"]) > 0
+    logger.info(f"Analytics: total_spend={data['total_spend']}, total_income={data['total_income']}")
+
+def test_statement_insights(client, auth_user, processed_statement):
+    logger.info("Testing GET /statements/{id}/insights reads precomputed insights (no live LLM call).")
+    response = client.get(
+        f"/statements/{processed_statement['statement_id']}/insights", headers=_auth_headers_no_content_type(auth_user)
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data["insights"], list)
+    # Insights may legitimately be empty if Ollama isn't reachable in this
+    # environment - the pipeline degrades gracefully rather than failing the
+    # whole statement (see insights/statement_insights.py).
+
+def test_statement_list_pagination(client, auth_user, processed_statement):
+    logger.info("Testing GET /statements list pagination.")
+    response = client.get("/statements?page=1&page_size=5", headers=_auth_headers_no_content_type(auth_user))
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] >= 1
+    assert len(data["items"]) <= 5
+
+def test_statement_ownership_enforced(client, processed_statement):
+    """A different user must not be able to see someone else's statement -
+    404, not 403, so existence isn't confirmed to a non-owner."""
+    logger.info("Testing that another user cannot access this statement (expect 404, not 403).")
+    other_email = f"otheruser_{uuid.uuid4().hex[:10]}@example.com"
+    reg = client.post(
+        "/auth/register", json={"email": other_email, "password": "StrongPassword123!"}, headers=HEADERS
+    )
+    assert reg.status_code == 201
+    other_token, _ = create_access_token(reg.json()["id"])
+    other_headers = {"X-Velar-API-Key": VALID_API_KEY, "Authorization": f"Bearer {other_token}"}
+
+    response = client.get(f"/statements/{processed_statement['statement_id']}", headers=other_headers)
+    assert response.status_code == 404
+    logger.info("Non-owner correctly received 404, not 403 (no existence leak).")
+
+def test_statement_requires_auth(client, processed_statement):
+    logger.info("Testing statement access without a JWT is rejected.")
+    response = client.get(f"/statements/{processed_statement['statement_id']}", headers=HEADERS)
+    assert response.status_code == 401
+
+def test_statement_upload_rejects_non_pdf(client, auth_user):
+    logger.info("Testing upload validation: a non-PDF file is rejected.")
+    files = {"file": ("not_a_statement.txt", b"hello world", "text/plain")}
+    response = client.post("/statements/upload", files=files, headers=_auth_headers_no_content_type(auth_user))
+    assert response.status_code == 422
+
+def test_statement_upload_rejects_corrupted_pdf(client, auth_user):
+    logger.info("Testing upload validation: a truncated/corrupted PDF is rejected.")
+    files = {"file": ("fake.pdf", b"%PDF-1.4 truncated garbage, not a real pdf structure", "application/pdf")}
+    response = client.post("/statements/upload", files=files, headers=_auth_headers_no_content_type(auth_user))
+    assert response.status_code == 422
+
+def test_statement_upload_rejects_unsupported_statement(client, auth_user):
+    """A structurally valid PDF that simply isn't a Google Pay statement."""
+    logger.info("Testing upload validation: a valid but unrecognized PDF layout is rejected.")
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    buf = io.BytesIO()
+    writer.write(buf)
+    files = {"file": ("random.pdf", buf.getvalue(), "application/pdf")}
+    response = client.post("/statements/upload", files=files, headers=_auth_headers_no_content_type(auth_user))
+    assert response.status_code == 422
+
+def test_statement_delete_cascades(client, auth_user):
+    """Uses its own upload (not the shared processed_statement fixture, which
+    other tests still depend on) since this test destroys its statement."""
+    logger.info("Testing DELETE /statements/{id} cascades to transactions and the job.")
+    upload_res = _upload_mock_statement(client, auth_user)
+    statement_id = upload_res.json()["statement_id"]
+    headers = _auth_headers_no_content_type(auth_user)
+
+    delete_res = client.delete(f"/statements/{statement_id}", headers=headers)
+    assert delete_res.status_code == 204
+
+    get_res = client.get(f"/statements/{statement_id}", headers=headers)
+    assert get_res.status_code == 404
+
+    txn_res = client.get(f"/statements/{statement_id}/transactions", headers=headers)
+    assert txn_res.status_code == 404
+    logger.info("Deleted statement and its sub-resources are correctly gone.")
+
+def test_users_me_and_patch(client, auth_user):
+    logger.info("Testing GET/PATCH /users/me.")
+    headers = _auth_headers_no_content_type(auth_user)
+
+    get_res = client.get("/users/me", headers=headers)
+    assert get_res.status_code == 200
+    assert get_res.json()["email"] == auth_user["email"]
+
+    patch_res = client.patch("/users/me", json={"full_name": "Test User"}, headers={**headers, "Content-Type": "application/json"})
+    assert patch_res.status_code == 200
+    assert patch_res.json()["full_name"] == "Test User"
+    logger.info("Profile updated and reflected correctly.")

@@ -4,6 +4,8 @@
 
 ✅ **FIXED**, and since further hardened — full detail in [21 · Production Hardening Audit §8](./21-production-hardening-audit.md#8-dependencies-updated). `requirements.txt` previously listed Ubuntu/`apt`-managed system packages instead of application dependencies; that's fixed, and it's now further split: `requirements.txt` (installed by the Dockerfile) has only what the live API actually imports, while `torch`/`transformers`/`peft`/`datasets`/`pandas`/`lightgbm`/`xgboost`/`shap`/`tabulate` — used exclusively by `training/train.py` and `training/finetune.py`, never imported by the live app — moved to `requirements-training.txt`, which the production image never installs. Every pinned version was also run through `pip-audit`; the audit found and fixed real CVEs in `fastapi`/`starlette`, `pytest`, and `setuptools`, including two genuine dependency-upgrade regressions (a `prometheus-fastapi-instrumentator` incompatibility and a `pymilvus`/`setuptools` `pkg_resources` conflict) that were only caught by actually re-running the test suite and the Docker build — see the audit doc for the exact errors and fixes.
 
+Statement ingestion ([23 · Statement Ingestion Pipeline](./23-statements-pipeline.md)) added `pypdf` (PDF structure validation/decryption), `pdfplumber` (text extraction — its default `x_tolerance` collapses this statement format's word spacing entirely, confirmed against a real sample, so it's always called with `x_tolerance=1`), and `python-multipart` (a hard runtime requirement the moment any route declares `File()`/`Form()`, per FastAPI/Starlette — `POST /statements/upload`).
+
 ## 14.2 Dockerfile
 
 ```dockerfile
@@ -69,6 +71,8 @@ JWT_SECRET_KEY=<required, min 32 chars - app fails to start otherwise; generate 
 JWT_ALGORITHM=HS256                   # optional, default shown
 JWT_ACCESS_TOKEN_EXPIRE_MINUTES=15    # optional, default shown
 JWT_REFRESH_TOKEN_EXPIRE_DAYS=30      # optional, default shown
+MAX_REQUEST_BODY_BYTES=15000000       # optional, default shown - raised from 1MB to fit multipart PDF uploads (POST /statements/upload)
+MAX_STATEMENT_PDF_BYTES=10000000      # optional, default shown - the tighter, upload-specific ceiling checked in routers/statements.py for a clearer 413 message
 ```
 Place this file at the repo root as `.env` for local development (loaded via `pydantic_settings`'s `env_file=".env"`); for containerized deployment, either mount/inject it or set each variable directly in the container environment (aligning names exactly — see the mismatch warning above for `docker-compose_production.yaml`). See [22 · Authentication](./22-authentication.md) for what `JWT_SECRET_KEY` signs and why a short/missing value fails startup rather than silently falling back to something insecure.
 
@@ -83,7 +87,7 @@ None of these run automatically on startup (no scheduler exists), but all are no
 5. `POST /v1/pipelines/clustering/run` — runs `ClusterEngine.run_discovery_pipeline()` (the `davies_bouldin_index` import bug is fixed — see [07 · Embeddings, Vector Search & Clustering §7.4](./07-embeddings-vectorsearch-clustering.md#74-phase-8-clustering-pipeline--clusteringpy)).
 6. `POST /v1/pipelines/decay/sweep` and `POST /v1/pipelines/graph/build` — the Phase 4 archival sweep and Phase 13 knowledge graph rebuild, both previously fully orphaned with zero callers.
 
-Full request/response details for all of these are in [02 · API Reference §2.9](./02-api-reference.md#29-batch-pipelines-routerspipelinespy-prefix-v1pipelines).
+Full request/response details for all of these are in [02 · API Reference §2.13](./02-api-reference.md#213-batch-pipelines-routerspipelinespy-prefix-v1pipelines).
 
 ## 14.6 `scripts/test_pipeline.sh` — manual E2E smoke test
 

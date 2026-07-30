@@ -1,6 +1,6 @@
 import logging
 
-from motor.motor_asyncio import AsyncIOMotorClient
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 
 from core.config import settings
 
@@ -35,6 +35,13 @@ class MongoDB:
         cls.retraining_queue = cls.db.get_collection("retraining_queue")
         cls.users = cls.db.get_collection("users")
         cls.refresh_tokens = cls.db.get_collection("refresh_tokens")
+        cls.statements = cls.db.get_collection("statements")
+        cls.jobs = cls.db.get_collection("jobs")
+
+        # GridFS: stores the original uploaded PDF (repositories/statement_repository.py).
+        # Reuses this same Mongo connection - no new infrastructure - see
+        # docs/23-statements-pipeline.md for why GridFS over S3/local disk.
+        cls.gridfs_bucket = AsyncIOMotorGridFSBucket(cls.db, bucket_name="statement_pdfs")
 
         logger.info(f"MongoDB connected to {uri}/{db_name}")
 
@@ -80,6 +87,27 @@ class MongoDB:
             await cls.refresh_tokens.create_index("token_hash", unique=True, background=True)
             await cls.refresh_tokens.create_index("user_id", background=True)
             await cls.refresh_tokens.create_index("expires_at", expireAfterSeconds=0, background=True)
+
+            # Statement ingestion (repositories/statement_repository.py,
+            # repositories/transaction_repository.py, repositories/job_repository.py).
+            # The partial unique index on (user_id, reference_number) is what
+            # makes re-uploading the same statement - or two statements whose
+            # date ranges overlap - idempotent: the same UPI transaction ID for
+            # the same user upserts in place instead of duplicating. It's
+            # partial (only applies where reference_number exists) so it never
+            # constrains transactions written by POST /v1/categorize, which
+            # has no reference_number at all.
+            await cls.transactions.create_index(
+                [("user_id", 1), ("reference_number", 1)],
+                unique=True,
+                background=True,
+                partialFilterExpression={"reference_number": {"$exists": True}},
+            )
+            await cls.transactions.create_index("statement_id", background=True)
+            await cls.statements.create_index("user_id", background=True)
+            await cls.statements.create_index([("user_id", 1), ("processing_status", 1)], background=True)
+            await cls.jobs.create_index("user_id", background=True)
+            await cls.jobs.create_index("resource_id", background=True)
 
             logger.info("MongoDB indexes ensured.")
         except Exception:
