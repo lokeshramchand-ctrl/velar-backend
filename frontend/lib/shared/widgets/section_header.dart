@@ -17,7 +17,7 @@ class SectionHeader extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label, style: AppTypography.microLabelTracked11.copyWith(color: labelColor)),
-        if (trailing != null) trailing!,
+        ?trailing,
       ],
     );
   }

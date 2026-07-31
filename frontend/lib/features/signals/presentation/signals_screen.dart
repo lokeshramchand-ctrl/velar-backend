@@ -7,7 +7,10 @@ import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/error_retry.dart';
 import '../../../shared/widgets/signal_card.dart';
+import '../../../shared/widgets/skeleton.dart';
 import '../../statements/domain/insight.dart';
 import '../../statements/presentation/period_providers.dart';
 
@@ -111,8 +114,15 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
             ),
             const SizedBox(height: 16),
             insightsAsync.when(
-              loading: () => Padding(padding: const EdgeInsets.symmetric(vertical: 30), child: Center(child: CircularProgressIndicator(color: AppColors.accent))),
-              error: (e, _) => Text('Could not load signals.', style: AppTypography.footnote12.copyWith(color: AppColors.onDarkMuted)),
+              loading: () => Column(
+                children: [
+                  for (var i = 0; i < 3; i++) ...[
+                    SkeletonBox(width: double.infinity, height: 96, radius: 16, dark: true),
+                    if (i != 2) const SizedBox(height: 12),
+                  ],
+                ],
+              ),
+              error: (e, _) => ErrorRetry(dark: true, message: 'Could not load signals.', onRetry: () => ref.invalidate(currentPeriodInsightsProvider)),
               data: (insights) {
                 final filtered = insights.where((i) {
                   return switch (_filter) {
@@ -122,9 +132,11 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
                   };
                 }).toList();
                 if (filtered.isEmpty) {
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 30),
-                    child: Text('No signals in this filter yet.', style: AppTypography.footnote12.copyWith(color: AppColors.onDarkMuted)),
+                  return EmptyState(
+                    dark: true,
+                    icon: Icons.auto_awesome_outlined,
+                    title: 'No signals in this filter yet',
+                    subtitle: 'Switch filters or check back after your next statement.',
                   );
                 }
                 return Column(

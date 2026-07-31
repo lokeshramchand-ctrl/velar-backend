@@ -2,7 +2,7 @@ import '../../../core/network/api_client.dart';
 import '../domain/job.dart';
 
 class JobsRepository {
-  JobsRepository({required ApiClient apiClient}) : _apiClient = apiClient;
+  JobsRepository({required this._apiClient});
 
   final ApiClient _apiClient;
 

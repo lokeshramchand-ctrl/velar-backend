@@ -53,6 +53,8 @@ abstract final class AppColors {
   static final Color progressTrackLight = oklch(0.93, 0.006, 265);
   static final Color skeletonBase = oklch(0.94, 0.005, 265);
   static final Color skeletonHighlight = oklch(0.96, 0.004, 265);
+  static final Color skeletonBaseDark = oklch(0.24, 0.014, 265);
+  static final Color skeletonHighlightDark = oklch(0.30, 0.015, 265);
   static final Color analysingGlowCenter = oklch(0.24, 0.04, 155);
   static final Color scrimHeavy = oklch(0.10, 0.01, 265, 0.72);
   static final Color scrimMedium = oklch(0.20, 0.01, 265, 0.35);

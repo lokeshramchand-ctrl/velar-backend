@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme/app_colors.dart';
@@ -6,6 +7,8 @@ import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/error_retry.dart';
 import '../../../shared/widgets/skeleton.dart';
 import '../../../shared/widgets/velar_list_row.dart';
 import '../../statements/domain/statement.dart';
@@ -55,12 +58,20 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             _StickyHeader(searchController: _searchController, period: period),
             Expanded(
               child: activityAsync.when(
-                loading: () => Center(child: CircularProgressIndicator(color: AppColors.accent)),
-                error: (e, _) => Center(child: Text('Could not load transactions.', style: AppTypography.footnote12.copyWith(color: AppColors.onLightMuted))),
+                loading: () => ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 8, AppSpacing.gutter, 120),
+                  itemCount: 8,
+                  itemBuilder: (context, index) => const SkeletonListRow(),
+                ),
+                error: (e, _) => ErrorRetry(onRetry: () => ref.invalidate(activityControllerProvider)),
                 data: (state) {
                   if (period == null) return const SizedBox.shrink();
                   if (state.transactions.isEmpty) {
-                    return Center(child: Text('No transactions match these filters.', style: AppTypography.footnote12.copyWith(color: AppColors.onLightMuted)));
+                    return EmptyState(
+                      icon: Icons.search_off_rounded,
+                      title: 'No transactions match these filters',
+                      subtitle: 'Try clearing the search or filter chips above.',
+                    );
                   }
                   final groups = _groupByDay(state.transactions);
                   return RefreshIndicator(
@@ -74,7 +85,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                         if (index >= groups.length) return const SkeletonListRow();
                         final group = groups[index];
                         final dayTotal = group.transactions.fold<double>(0, (sum, t) => sum + (t.transactionType == TransactionType.debit ? -t.amount : t.amount));
-                        return Column(
+                        final column = Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Padding(
@@ -104,6 +115,10 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                               ),
                           ],
                         );
+                        return column
+                            .animate(delay: (index.clamp(0, 6) * 40).ms)
+                            .fadeIn(duration: 220.ms)
+                            .moveY(begin: 6, end: 0, duration: 220.ms, curve: Curves.easeOut);
                       },
                     ),
                   );

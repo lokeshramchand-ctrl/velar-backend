@@ -44,7 +44,7 @@ class ProgressRing extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (centerLabel != null) centerLabel!,
+                ?centerLabel,
                 if (centerSubLabel != null) ...[
                   const SizedBox(height: 4),
                   Text(

@@ -13,9 +13,12 @@ import '../../../shared/widgets/app_buttons.dart';
 import '../../../shared/widgets/avatar_chip.dart';
 import '../../../shared/widgets/category_bar_row.dart';
 import '../../../shared/widgets/delta_chip.dart';
+import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/error_retry.dart';
 import '../../../shared/widgets/period_pill.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/signal_card.dart';
+import '../../../shared/widgets/skeleton.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/auth_state.dart';
 import '../../statements/domain/insight.dart';
@@ -40,12 +43,17 @@ class _OverviewScreenState extends ConsumerState<OverviewScreen> {
     return Scaffold(
       backgroundColor: AppColors.paper,
       body: periodsAsync.when(
-        loading: () => Center(child: CircularProgressIndicator(color: AppColors.accent)),
-        error: (error, _) => _ErrorRetry(onRetry: () => ref.invalidate(periodsProvider)),
+        loading: () => const _OverviewSkeleton(),
+        error: (error, _) => ErrorRetry(onRetry: () => ref.invalidate(periodsProvider)),
         data: (periods) {
           final current = ref.watch(currentPeriodProvider);
           if (current == null) {
-            return _ErrorRetry(onRetry: () => ref.invalidate(periodsProvider), message: 'No periods yet.');
+            return EmptyState(
+              icon: Icons.receipt_long_outlined,
+              title: 'No periods yet',
+              subtitle: 'Add your first Google Pay statement to see your overview.',
+              cta: PrimaryPillButton(label: 'Add a statement', expand: false, onPressed: () => showPeriodSwitcher(context, ref)),
+            );
           }
           if (current.processingStatus != ProcessingStatus.completed) {
             return _ProcessingPlaceholder(period: current);
@@ -136,7 +144,19 @@ class _Header extends ConsumerWidget {
           Text('NET FLOW · ${_spanLabel(period)}', style: AppTypography.microLabel11.copyWith(color: AppColors.onDarkFaint)),
           const SizedBox(height: 6),
           analyticsAsync.when(
-            loading: () => const SizedBox(height: 44),
+            loading: () => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SkeletonBox(width: 180, height: 40, dark: true),
+                  const SizedBox(height: 16),
+                  SkeletonBox(width: double.infinity, height: 8, radius: 4, dark: true),
+                  const SizedBox(height: 14),
+                  SkeletonBox(width: 120, height: 30, dark: true),
+                ],
+              ),
+            ),
             error: (e, _) => Text('Could not load analytics.', style: AppTypography.footnote12.copyWith(color: AppColors.rose)),
             data: (analytics) {
               if (analytics == null) return const SizedBox.shrink();
@@ -253,7 +273,7 @@ class _SignalsPreview extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         insightsAsync.when(
-          loading: () => const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: CircularProgressIndicator())),
+          loading: () => Column(children: [SkeletonBox(width: double.infinity, height: 74, radius: 16), const SizedBox(height: 12), SkeletonBox(width: double.infinity, height: 74, radius: 16)]),
           error: (e, _) => Text('Could not load signals.', style: AppTypography.footnote12.copyWith(color: AppColors.onLightMuted)),
           data: (insights) {
             if (insights.isEmpty) {
@@ -298,7 +318,18 @@ class _CategoryBreakdown extends ConsumerWidget {
     final previousAsync = ref.watch(previousPeriodAnalyticsProvider);
 
     return analyticsAsync.when(
-      loading: () => const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: CircularProgressIndicator())),
+      loading: () => Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var i = 0; i < 4; i++) ...[
+              SkeletonBox(width: double.infinity, height: 34),
+              if (i != 3) const SizedBox(height: 12),
+            ],
+          ],
+        ),
+      ),
       error: (e, _) => const SizedBox.shrink(),
       data: (analytics) {
         if (analytics == null || analytics.categoryBreakdown.isEmpty) return const SizedBox.shrink();
@@ -378,20 +409,62 @@ class _ProcessingPlaceholder extends StatelessWidget {
   }
 }
 
-class _ErrorRetry extends StatelessWidget {
-  const _ErrorRetry({required this.onRetry, this.message});
-  final VoidCallback onRetry;
-  final String? message;
+/// Full-page skeleton matching Overview's header/signals/category layout,
+/// shown while the initial periods load is in flight.
+class _OverviewSkeleton extends StatelessWidget {
+  const _OverviewSkeleton();
 
   @override
   Widget build(BuildContext context) {
-    return Center(
+    return SingleChildScrollView(
+      physics: const NeverScrollableScrollPhysics(),
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(message ?? 'Something went wrong.', style: AppTypography.footnote15.copyWith(color: AppColors.onLightMuted)),
-          const SizedBox(height: 14),
-          PrimaryPillButton(label: 'Retry', expand: false, onPressed: onRetry),
+          Container(
+            color: AppColors.ink900,
+            padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 6, AppSpacing.gutter, 26),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    SkeletonBox(width: 96, height: 30, radius: 100, dark: true),
+                    const Spacer(),
+                    SkeletonBox(width: 34, height: 34, radius: 17, dark: true),
+                    const SizedBox(width: 10),
+                    SkeletonBox(width: 34, height: 34, radius: 17, dark: true),
+                  ],
+                ),
+                const SizedBox(height: 26),
+                SkeletonBox(width: 140, height: 12, dark: true),
+                const SizedBox(height: 10),
+                SkeletonBox(width: 180, height: 40, dark: true),
+                const SizedBox(height: 16),
+                SkeletonBox(width: double.infinity, height: 8, radius: 4, dark: true),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 24, AppSpacing.gutter, 108),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SkeletonBox(width: 90, height: 12),
+                const SizedBox(height: 12),
+                SkeletonBox(width: double.infinity, height: 74, radius: 16),
+                const SizedBox(height: 12),
+                SkeletonBox(width: double.infinity, height: 74, radius: 16),
+                const SizedBox(height: 26),
+                SkeletonBox(width: 120, height: 12),
+                const SizedBox(height: 16),
+                for (var i = 0; i < 4; i++) ...[
+                  SkeletonBox(width: double.infinity, height: 34),
+                  if (i != 3) const SizedBox(height: 12),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );

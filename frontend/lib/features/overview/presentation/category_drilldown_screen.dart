@@ -10,7 +10,10 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/avatar_chip.dart';
 import '../../../shared/widgets/delta_chip.dart';
+import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/error_retry.dart';
 import '../../../shared/widgets/mini_bar_chart.dart';
+import '../../../shared/widgets/skeleton.dart';
 import '../../statements/presentation/period_providers.dart';
 import 'category_drilldown_controller.dart';
 
@@ -94,7 +97,7 @@ class CategoryDrilldownScreen extends ConsumerWidget {
                     const SizedBox(height: 20),
                     drilldownAsync.when(
                       loading: () => const SizedBox(height: 78),
-                      error: (_, __) => const SizedBox(height: 78),
+                      error: (_, _) => const SizedBox(height: 78),
                       data: (drilldown) {
                         final maxTotal = drilldown.monthlyBuckets.fold<double>(0, (m, b) => b.total > m ? b.total : m);
                         return MiniBarChart(
@@ -121,11 +124,21 @@ class CategoryDrilldownScreen extends ConsumerWidget {
                     Text('MERCHANTS IN ${category.toUpperCase()}', style: AppTypography.microLabelTracked11.copyWith(color: AppColors.onLightFaint)),
                     const SizedBox(height: 12),
                     drilldownAsync.when(
-                      loading: () => const Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Center(child: CircularProgressIndicator())),
-                      error: (e, _) => Text('Could not load merchants.', style: AppTypography.footnote12.copyWith(color: AppColors.onLightMuted)),
+                      loading: () => Column(
+                        children: [
+                          for (var i = 0; i < 3; i++) ...[
+                            const SkeletonListRow(),
+                            if (i != 2) const Divider(height: 1, indent: 62),
+                          ],
+                        ],
+                      ),
+                      error: (e, _) => ErrorRetry(onRetry: () => ref.invalidate(categoryDrilldownProvider(category)), message: 'Could not load merchants.'),
                       data: (drilldown) {
                         if (drilldown.merchants.isEmpty) {
-                          return Text('No transactions found for this category yet.', style: AppTypography.footnote12.copyWith(color: AppColors.onLightMuted));
+                          return EmptyState(
+                            icon: Icons.receipt_outlined,
+                            title: 'No transactions found for this category yet',
+                          );
                         }
                         final top = drilldown.merchants.take(5).toList();
                         return Container(

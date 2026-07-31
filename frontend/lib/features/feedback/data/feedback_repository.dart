@@ -1,7 +1,7 @@
 import '../../../core/network/api_client.dart';
 
 class FeedbackRepository {
-  FeedbackRepository({required ApiClient apiClient}) : _apiClient = apiClient;
+  FeedbackRepository({required this._apiClient});
 
   final ApiClient _apiClient;
 

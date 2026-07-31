@@ -211,7 +211,7 @@ class _TransactionSheetBodyState extends ConsumerState<_TransactionSheetBody> {
         children: [
           Text(label, style: AppTypography.body14.copyWith(fontSize: 13, color: AppColors.onLightMuted)),
           const Spacer(),
-          if (trailing != null) trailing,
+          ?trailing,
           if (trailing == null)
             Text(value, style: (mono ? AppTypography.meta12 : AppTypography.rowLabel14).copyWith(color: AppColors.onLight)),
         ],

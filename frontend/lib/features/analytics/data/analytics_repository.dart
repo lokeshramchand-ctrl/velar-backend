@@ -2,7 +2,7 @@ import '../../../core/network/api_client.dart';
 import '../domain/analytics_models.dart';
 
 class AnalyticsRepository {
-  AnalyticsRepository({required ApiClient apiClient}) : _apiClient = apiClient;
+  AnalyticsRepository({required this._apiClient});
 
   final ApiClient _apiClient;
 

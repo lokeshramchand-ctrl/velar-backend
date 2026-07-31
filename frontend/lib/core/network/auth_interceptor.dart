@@ -13,9 +13,8 @@ import '../storage/token_storage.dart';
 class AuthInterceptor extends Interceptor {
   AuthInterceptor({
     required this._tokenStorage,
-    required Future<void> Function() onSessionExpired,
-  })  : _onSessionExpired = onSessionExpired,
-        _refreshDio = Dio(BaseOptions(baseUrl: AppConfig.apiBaseUrl))
+    required this._onSessionExpired,
+  })  : _refreshDio = Dio(BaseOptions(baseUrl: AppConfig.apiBaseUrl))
           ..options.headers['X-Velar-API-Key'] = AppConfig.apiKey;
 
   final TokenStorage _tokenStorage;

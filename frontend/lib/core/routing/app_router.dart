@@ -22,8 +22,8 @@ import 'app_shell.dart';
 
 class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(Ref ref) {
-    ref.listen(authControllerProvider, (_, __) => notifyListeners());
-    ref.listen(periodsProvider, (_, __) => notifyListeners());
+    ref.listen(authControllerProvider, (_, _) => notifyListeners());
+    ref.listen(periodsProvider, (_, _) => notifyListeners());
   }
 }
 

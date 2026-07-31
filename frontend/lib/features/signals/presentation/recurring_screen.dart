@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -8,6 +9,8 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/avatar_chip.dart';
+import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/error_retry.dart';
 import '../../../shared/widgets/regularity_strip.dart';
 import '../../statements/domain/statement_analytics.dart';
 import '../../statements/presentation/period_providers.dart';
@@ -24,7 +27,7 @@ class RecurringScreen extends ConsumerWidget {
       body: SafeArea(
         child: analyticsAsync.when(
           loading: () => Center(child: CircularProgressIndicator(color: AppColors.accent)),
-          error: (e, _) => Center(child: Text('Could not load recurring payments.', style: AppTypography.footnote12.copyWith(color: AppColors.onLightMuted))),
+          error: (e, _) => ErrorRetry(onRetry: () => ref.invalidate(currentPeriodAnalyticsProvider), message: 'Could not load recurring payments.'),
           data: (analytics) {
             final payments = [...?analytics?.recurringPayments]..sort((a, b) => b.estimatedMonthlyCost.compareTo(a.estimatedMonthlyCost));
             final totalMonthly = payments.fold<double>(0, (sum, p) => sum + p.estimatedMonthlyCost);
@@ -67,13 +70,14 @@ class RecurringScreen extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (payments.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 20),
-                          child: Text('No recurring payments detected in this period yet.', style: AppTypography.footnote12.copyWith(color: AppColors.onLightMuted)),
+                        EmptyState(
+                          icon: Icons.repeat_rounded,
+                          title: 'No recurring payments detected yet',
+                          subtitle: 'Velar looks for merchants you pay on a regular cadence within this period.',
                         )
                       else
-                        for (final payment in payments) ...[
-                          _SubscriptionCard(payment: payment),
+                        for (var i = 0; i < payments.length; i++) ...[
+                          _SubscriptionCard(payment: payments[i], entranceDelayMs: i.clamp(0, 6) * 50),
                           const SizedBox(height: 12),
                         ],
                       const SizedBox(height: 8),
@@ -108,8 +112,9 @@ class RecurringScreen extends ConsumerWidget {
 }
 
 class _SubscriptionCard extends StatelessWidget {
-  const _SubscriptionCard({required this.payment});
+  const _SubscriptionCard({required this.payment, this.entranceDelayMs = 0});
   final RecurringPaymentEntry payment;
+  final int entranceDelayMs;
 
   @override
   Widget build(BuildContext context) {
@@ -119,7 +124,7 @@ class _SubscriptionCard extends StatelessWidget {
       for (var i = 0; i < 7; i++) i < filledSegments ? RegularitySegmentState.paid : RegularitySegmentState.upcoming,
     ];
 
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: AppColors.card, border: Border.all(color: AppColors.hairlineLight), borderRadius: BorderRadius.circular(AppRadius.card)),
       child: Column(
@@ -165,5 +170,10 @@ class _SubscriptionCard extends StatelessWidget {
         ],
       ),
     );
+
+    return card
+        .animate(delay: entranceDelayMs.ms)
+        .fadeIn(duration: 240.ms)
+        .moveY(begin: 6, end: 0, duration: 240.ms, curve: Curves.easeOut);
   }
 }

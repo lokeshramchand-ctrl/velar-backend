@@ -7,7 +7,7 @@ import '../domain/statement_analytics.dart';
 import '../domain/transaction.dart';
 
 class StatementsRepository {
-  StatementsRepository({required ApiClient apiClient}) : _apiClient = apiClient;
+  StatementsRepository({required this._apiClient});
 
   final ApiClient _apiClient;
 
@@ -75,9 +75,9 @@ class StatementsRepository {
       queryParameters: {
         'page': page,
         'page_size': pageSize,
-        if (category != null) 'category': category,
+        'category': ?category,
         if (transactionType != null) 'transaction_type': transactionType == TransactionType.debit ? 'DEBIT' : 'CREDIT',
-        if (merchant != null) 'merchant': merchant,
+        'merchant': ?merchant,
         if (startDate != null) 'start_date': _dateOnly(startDate),
         if (endDate != null) 'end_date': _dateOnly(endDate),
         'sort_by': sortBy,

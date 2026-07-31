@@ -1,12 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/network/api_exception.dart';
 import '../../../core/providers/feature_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/empty_state.dart';
+import '../../../shared/widgets/error_retry.dart';
+import '../../../shared/widgets/skeleton.dart';
 import '../../statements/domain/statement.dart';
 import '../../statements/presentation/period_providers.dart';
 
@@ -25,26 +30,50 @@ class ManagePeriodsScreen extends ConsumerWidget {
         title: Text('Manage periods', style: AppTypography.navTitle15.copyWith(color: AppColors.onDark)),
       ),
       body: periodsAsync.when(
-        loading: () => Center(child: CircularProgressIndicator(color: AppColors.accent)),
-        error: (e, _) => Center(child: Text('Could not load periods.', style: AppTypography.footnote12.copyWith(color: AppColors.onDarkMuted))),
-        data: (periods) => ListView.separated(
+        loading: () => ListView.separated(
           padding: const EdgeInsets.all(AppSpacing.gutter),
-          itemCount: periods.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 10),
-          itemBuilder: (context, index) => _PeriodTile(period: periods[index]),
+          itemCount: 4,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (context, index) => SkeletonBox(width: double.infinity, height: 68, radius: AppRadius.card, dark: true),
         ),
+        error: (e, _) => ErrorRetry(dark: true, message: 'Could not load periods.', onRetry: () => ref.invalidate(periodsProvider)),
+        data: (periods) {
+          if (periods.isEmpty) {
+            return const EmptyState(
+              dark: true,
+              icon: Icons.folder_open_outlined,
+              title: 'No periods yet',
+              subtitle: 'Statements you add will show up here.',
+            );
+          }
+          return ListView.separated(
+            padding: const EdgeInsets.all(AppSpacing.gutter),
+            itemCount: periods.length,
+            separatorBuilder: (_, _) => const SizedBox(height: 10),
+            itemBuilder: (context, index) => _PeriodTile(period: periods[index], entranceDelayMs: index.clamp(0, 6) * 40),
+          );
+        },
       ),
     );
   }
 }
 
-class _PeriodTile extends ConsumerWidget {
-  const _PeriodTile({required this.period});
+class _PeriodTile extends ConsumerStatefulWidget {
+  const _PeriodTile({required this.period, this.entranceDelayMs = 0});
   final Statement period;
+  final int entranceDelayMs;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Container(
+  ConsumerState<_PeriodTile> createState() => _PeriodTileState();
+}
+
+class _PeriodTileState extends ConsumerState<_PeriodTile> {
+  bool _deleting = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final period = widget.period;
+    final card = Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(color: AppColors.ink850, border: Border.all(color: AppColors.hairlineDark), borderRadius: BorderRadius.circular(AppRadius.card)),
       child: Row(
@@ -60,16 +89,25 @@ class _PeriodTile extends ConsumerWidget {
               ],
             ),
           ),
-          IconButton(
-            icon: Icon(Icons.delete_outline_rounded, color: AppColors.rose, size: 20),
-            onPressed: () => _confirmDelete(context, ref),
-          ),
+          if (_deleting)
+            SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose))
+          else
+            IconButton(
+              icon: Icon(Icons.delete_outline_rounded, color: AppColors.rose, size: 20),
+              onPressed: _confirmDelete,
+            ),
         ],
       ),
     );
+
+    return card
+        .animate(delay: widget.entranceDelayMs.ms)
+        .fadeIn(duration: 220.ms)
+        .moveY(begin: 6, end: 0, duration: 220.ms, curve: Curves.easeOut);
   }
 
-  Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+  Future<void> _confirmDelete() async {
+    final period = widget.period;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -85,8 +123,18 @@ class _PeriodTile extends ConsumerWidget {
         ],
       ),
     );
-    if (confirmed != true) return;
-    await ref.read(statementsRepositoryProvider).delete(period.id);
-    ref.invalidate(periodsProvider);
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _deleting = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(statementsRepositoryProvider).delete(period.id);
+      ref.invalidate(periodsProvider);
+      messenger.showSnackBar(SnackBar(content: Text('${period.originalFilename} deleted'), backgroundColor: AppColors.ink700));
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() => _deleting = false);
+      messenger.showSnackBar(SnackBar(content: Text(e.message), backgroundColor: AppColors.rose));
+    }
   }
 }

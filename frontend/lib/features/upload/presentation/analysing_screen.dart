@@ -82,7 +82,7 @@ class AnalysingScreen extends ConsumerWidget {
                             ],
                           ),
                         ),
-                        centerSubLabel: job.stage == null ? null : job.stage!.toUpperCase(),
+                        centerSubLabel: job.stage?.toUpperCase(),
                       ),
                     ),
                     const SizedBox(height: 28),

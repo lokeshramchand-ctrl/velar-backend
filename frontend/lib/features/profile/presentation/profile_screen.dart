@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../../core/network/api_exception.dart';
 import '../../../core/providers/feature_providers.dart';
 import '../../../core/providers/settings_providers.dart';
 import '../../../core/theme/app_colors.dart';
@@ -175,21 +176,35 @@ class ProfileScreen extends ConsumerWidget {
         ],
       ),
     );
-    if (result == null) return;
-    await ref.read(authRepositoryProvider).updateProfile(fullName: result.isEmpty ? null : result);
-    ref.invalidate(authControllerProvider);
+    if (result == null || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await ref.read(authRepositoryProvider).updateProfile(fullName: result.isEmpty ? null : result);
+      ref.invalidate(authControllerProvider);
+      messenger.showSnackBar(SnackBar(content: Text('Name updated'), backgroundColor: AppColors.ink700));
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message), backgroundColor: AppColors.rose));
+    }
   }
 
   Future<void> _exportData(BuildContext context, WidgetRef ref) async {
     final period = ref.read(currentPeriodProvider);
-    if (period == null) return;
-    final repo = ref.read(statementsRepositoryProvider);
-    final result = await repo.transactions(period.id, page: 1, pageSize: 100, sortBy: 'timestamp', sortOrder: 'desc');
-    final buffer = StringBuffer('date,merchant,category,amount,type,status\n');
-    for (final txn in result.items) {
-      buffer.writeln('${txn.timestamp.toIso8601String()},${txn.merchant ?? ''},${txn.category ?? ''},${txn.amount},${txn.transactionType.name},${txn.status.name}');
+    final messenger = ScaffoldMessenger.of(context);
+    if (period == null) {
+      messenger.showSnackBar(SnackBar(content: Text('Add a statement first to export its transactions.'), backgroundColor: AppColors.ink700));
+      return;
     }
-    await Share.share(buffer.toString(), subject: 'Velar export - ${period.originalFilename}');
+    try {
+      final repo = ref.read(statementsRepositoryProvider);
+      final result = await repo.transactions(period.id, page: 1, pageSize: 100, sortBy: 'timestamp', sortOrder: 'desc');
+      final buffer = StringBuffer('date,merchant,category,amount,type,status\n');
+      for (final txn in result.items) {
+        buffer.writeln('${txn.timestamp.toIso8601String()},${txn.merchant ?? ''},${txn.category ?? ''},${txn.amount},${txn.transactionType.name},${txn.status.name}');
+      }
+      await Share.share(buffer.toString(), subject: 'Velar export - ${period.originalFilename}');
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message), backgroundColor: AppColors.rose));
+    }
   }
 
   Future<void> _confirmDeleteAccount(BuildContext context, WidgetRef ref) async {
