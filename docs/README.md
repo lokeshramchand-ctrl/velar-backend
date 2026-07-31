@@ -36,6 +36,8 @@ The codebase is organized as a series of **numbered "Phases"** — this isn't a 
 | [Interview Question Bank (204 questions)](./interview/README.md) | Practice or run a senior-engineer interview using 204 codebase-specific questions across 13 categories, each with difficulty, expected/excellent/poor answers, follow-ups, and red flags |
 | [20 · Design Decisions Deep Dive](./20-design-decisions-deep-dive.md) | For each of the 13 major architectural decisions: why it was chosen, alternatives, pros/cons, tradeoffs, why it fits this project, failure modes, FAANG-style improvements, and how to scale it to 1M users |
 | [21 · Production Hardening & Security Audit](./21-production-hardening-audit.md) | The full pre-production security/reliability/operability audit: every finding, every fix, exact CVEs patched, Docker/CI/CD work, and what's verified vs. still open |
+| [22 · Authentication](./22-authentication.md) | Understand the two-layer API-key + JWT auth model: token lifecycle, password hashing, refresh rotation, per-endpoint protection, and configuration |
+| [23 · Statement Ingestion Pipeline](./23-statements-pipeline.md) | Understand the Google Pay PDF → Transactions → Analytics → AI Insights product surface: the real statement format, async job processing, and how it reuses the existing engines |
 | [Folder-by-Folder Reference](./folders/README.md) | Get a deep dive on one specific folder — purpose, classes, dependency/call graphs, interview questions, common mistakes, and blast radius if it disappeared |
 | [File-by-File Reference](./files/README.md) | Get a deep dive on one specific file — every import, every function explained in plain English, side effects, performance notes, and interview questions |
 | [Complete API Reference (per-endpoint)](./api/README.md) | Get the full contract for one specific endpoint — headers, validation, exact DB queries, execution flow diagram, examples, and interview questions |
@@ -44,18 +46,22 @@ The codebase is organized as a series of **numbered "Phases"** — this isn't a 
 
 ```mermaid
 flowchart LR
-    Client([Client]) -->|X-Velar-API-Key| API[FastAPI App<br/>app.py]
+    Client([Client]) -->|X-Velar-API-Key + JWT| API[FastAPI App<br/>app.py]
     API --> V1[/v1 router/]
     API --> MEM[/memory router/]
     API --> ANA[/v1/analytics router/]
     API --> RAG[/v1 explain router/]
     API --> OBS[/v1/observability router/]
+    API --> STMT[/statements + jobs routers/]
     V1 --> Mongo[(MongoDB)]
     MEM --> Mongo
     ANA --> Mongo
     RAG --> Mongo
     RAG --> Milvus[(Milvus Vector DB)]
     RAG --> Ollama[[Ollama LLM Server]]
+    STMT --> Mongo
+    STMT --> Milvus
+    STMT --> Ollama
     API --> Prom[/Prometheus /metrics/]
 ```
 
@@ -68,7 +74,9 @@ flowchart LR
 | Rate limiting | SlowAPI | `core/rate_limiter.py` |
 | Primary datastore | MongoDB via Motor (async) | `database/mongo.py` |
 | Vector datastore | Milvus via `pymilvus.MilvusClient` | `database/milvus.py`, `milvus/*.py` |
-| LLM / embeddings inference | Ollama HTTP API | `core/ollama_client.py`, `rag/generator.py`, `embeddings/generate_embeddings.py` |
+| Blob storage | MongoDB GridFS (`AsyncIOMotorGridFSBucket`) | `database/mongo.py`, `repositories/statement_repository.py` |
+| PDF parsing | `pypdf` (structure/decryption), `pdfplumber` (text extraction) | `statements/pdf_parser.py` |
+| LLM / embeddings inference | Ollama HTTP API | `core/ollama_client.py`, `rag/generator.py`, `embeddings/generate_embeddings.py`, `insights/statement_insights.py` |
 | Dimensionality reduction | UMAP | `clustering/umap_projection.py` |
 | Density clustering | HDBSCAN (scikit-learn) | `clustering/hdbscan_cluster.py` |
 | Classical ML baselines | scikit-learn, LightGBM, XGBoost | `training/train.py` |

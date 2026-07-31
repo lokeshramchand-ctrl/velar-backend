@@ -1,8 +1,10 @@
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
 
+from core.jwt_auth import get_current_user
 from feedback.feedback_service import feedback_service
 from feedback.retraining_queue import retraining_manager
+from models.schemas import User
 
 router = APIRouter(prefix="/v1/feedback", tags=["Continuous Learning"])
 
@@ -13,7 +15,9 @@ class FeedbackRequest(BaseModel):
     confidence: float = Field(..., ge=0.0, le=1.0)
 
 @router.post("/")
-async def submit_feedback(request: FeedbackRequest, background_tasks: BackgroundTasks):
+async def submit_feedback(
+    request: FeedbackRequest, background_tasks: BackgroundTasks, current_user: User = Depends(get_current_user)
+):
     """
     Accepts human feedback, updates the Active Learning queue,
     and asynchronously checks if the model needs retraining.
@@ -23,7 +27,8 @@ async def submit_feedback(request: FeedbackRequest, background_tasks: Background
         transaction_id=request.transaction_id,
         original_prediction=request.original_prediction,
         corrected_category=request.corrected_category,
-        confidence=request.confidence
+        confidence=request.confidence,
+        user_id=current_user.id,
     )
 
     # 2. Check the queue threshold in the background (so we don't block the API response)

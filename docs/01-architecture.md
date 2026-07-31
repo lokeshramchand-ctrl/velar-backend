@@ -205,13 +205,18 @@ State thresholds (`memory/state_machine.py`): `frequency >= 10` → `PERMANENT`;
 
 ## 1.8 Security & rate limiting
 
-- **Auth**: every router except `/health` and `/metrics` is mounted with `dependencies=[Depends(validate_api_key)]` in `app.py`. `validate_api_key` (`core/security.py`) now checks the `X-Velar-API-Key` header against `settings.VELAR_API_KEY` — previously it compared against a hardcoded literal regardless of configuration, fixed, see [16 · Known Issues §16.2](./16-known-issues-tech-debt.md#162-high-previously-security--correctness-with-real-user-impact--all-fixed).
-- **Rate limiting**: SlowAPI (`core/rate_limiter.py`) applies a global default of `1000/day` and `100/minute` per client IP (`get_remote_address`). `POST /v1/categorize` (the real router-mounted handler in `routers/v1.py`) additionally declares `@limiter.limit("50/minute")` — previously this decorator only existed on a dead-code duplicate route that never received traffic; it's now on the actual handler and verified to return `429` once exceeded.
+- **Auth — two independent layers**: every router except `/health`, `/live`, `/ready`, and `/metrics` is mounted with `dependencies=[Depends(validate_api_key)]` in `app.py`, unchanged from before. `validate_api_key` (`core/security.py`) checks the `X-Velar-API-Key` header against `settings.VELAR_API_KEY` — this authenticates the *calling application* (the one trusted client consuming this backend), not an individual end user.
+
+  A second, independent layer authenticates the *end user* within that application boundary: `core/jwt_auth.py::get_current_user` validates a `Authorization: Bearer <JWT>` access token and resolves it to a `User` document. Unlike the API key (attached once per router via `dependencies=[...]`), this is bound explicitly as a handler parameter — `current_user: User = Depends(get_current_user)` — only on the specific endpoints that need to know *which* user is calling: `POST /auth/me`/`/auth/logout` implicitly via the token, `POST /v1/categorize`, every `GET /v1/analytics/*`, and `POST /v1/feedback/`. Endpoints that operate on data that isn't scoped to one user (`/v1/resolve`, `/v1/confidence/evaluate`, `/v1/explain`, `/memory/*`, `/v1/pipelines/*`, `/v1/observability/*`, `/v1/analytics/anomaly/check`) stay API-key-only, exactly as before.
+
+  The two layers compose independently and are both enforced whenever both are declared: the router-level API-key dependency runs regardless of what any individual handler additionally requires, so a genuine JWT presented without the API key is rejected before a handler runs, and a valid API key alone is not sufficient on a JWT-protected handler. See [22 · Authentication](./22-authentication.md) for the full endpoint-by-endpoint breakdown, token lifecycle, and password/refresh-token storage design.
+
+- **Rate limiting**: SlowAPI (`core/rate_limiter.py`) applies a global default of `1000/day` and `100/minute` per client IP (`get_remote_address`). `POST /v1/categorize` additionally declares `@limiter.limit("50/minute")`. `POST /auth/register`, `/auth/login`, and `/auth/refresh`/`/auth/logout` declare their own tighter limits (`5/minute`, `10/minute`, `20/minute` respectively) — see [22 · Authentication §22.6](./22-authentication.md#226-rate-limiting).
 - **Metrics**: `prometheus_fastapi_instrumentator` auto-instruments every route and exposes `GET /metrics` with no auth dependency.
 
 ## 1.9 Batch pipelines — now reachable via `/v1/pipelines/*`
 
-The following modules are fully implemented but have no natural scheduler in this repo (no Celery/cron exists here). Rather than leaving them reachable only via direct import/script invocation, each is now exposed as a manually-triggered endpoint under `routers/pipelines.py` (mounted at `/v1/pipelines`, same auth as every other router) — see [02 · API Reference §2.9](./02-api-reference.md#29-batch-pipelines-routerspipelinespy-prefix-v1pipelines) for full request/response detail:
+The following modules are fully implemented but have no natural scheduler in this repo (no Celery/cron exists here). Rather than leaving them reachable only via direct import/script invocation, each is now exposed as a manually-triggered endpoint under `routers/pipelines.py` (mounted at `/v1/pipelines`, same auth as every other router) — see [02 · API Reference §2.13](./02-api-reference.md#213-batch-pipelines-routerspipelinespy-prefix-v1pipelines) for full request/response detail:
 
 | Module | Singleton | Reachable via |
 |---|---|---|
@@ -227,3 +232,25 @@ The following modules are fully implemented but have no natural scheduler in thi
 `training/*` are deliberately **not** wired to an endpoint: both currently train on synthetic/mock data rather than real feedback, and `BaselineTrainer.run_benchmarks()` is a long-running, CPU-heavy synchronous job that would block the event loop if called from a request handler. Exposing either as-is would look "fixed" while actually being misleading — see [16 · Known Issues §16.5](./16-known-issues-tech-debt.md#165-whats-intentionally-still-open-productinfra-decisions-not-bugs).
 
 Operationally: in a fresh environment, run `POST /v1/pipelines/behavior/run-all` before expecting real results from `/v1/analytics/subscriptions` or `/v1/analytics/anomaly/check`, and run it followed by `POST /v1/pipelines/embeddings/sync` before expecting `/v1/explain` to retrieve real grounded context. Nothing runs these automatically yet — that requires a scheduler, which is a separate infra decision.
+
+## 1.10 Request flow — `POST /statements/upload` (Google Pay statement ingestion)
+
+The primary product surface: `Statement → Transactions → Analytics → AI Insights`, sourced from a Google Pay PDF statement rather than one-at-a-time raw text. Full detail — the real statement format, the processing pipeline, and how it reuses `rule_engine`, `behavior_engine`, embeddings/Milvus, and the Ollama-calling convention — is in [23 · Statement Ingestion Pipeline](./23-statements-pipeline.md).
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant R as routers/statements.py
+    participant P as statements/pdf_parser.py
+    participant BG as BackgroundTasks
+    participant S as statements/statement_service.py
+
+    C->>R: POST /statements/upload (file, password?)
+    R->>P: validate (structure, signature, decrypt) - synchronous, fails fast with 422
+    R->>R: create Statement(PENDING) + Job(QUEUED)
+    R-->>C: 202 {statement_id, job_id}
+    R->>BG: add_task(process_statement, ...)
+    BG->>S: parse -> categorize -> persist -> profile -> embed -> analyze -> generate insights -> COMPLETED
+```
+
+Job execution is in-process (`fastapi.BackgroundTasks`), consistent with §1.9's "no scheduler/Celery exists in this repo" - the client-facing contract (`GET /jobs/{id}` polling) is identical regardless of what actually executes the job, so a real task queue could replace this later with zero API change.

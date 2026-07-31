@@ -30,24 +30,21 @@ class VectorStoreManager:
             return
 
         if not client.has_collection(self.behavior_col_name):
-            schema = {
-                "fields": [
-                    {"name": "id", "dtype": DataType.VARCHAR, "is_primary": True, "max_length": 255},
-                    {"name": "merchant_name", "dtype": DataType.VARCHAR, "max_length": 255},
-                    {"name": "embedding", "dtype": DataType.FLOAT_VECTOR, "dim": VECTOR_DIM},
-                ],
-                "description": "Semantic embeddings of merchant behaviors"
-            }
-            client.create_collection(self.behavior_col_name, schema)
-            logger.info("Created Milvus collection: %s", self.behavior_col_name)
+            schema = client.create_schema(auto_id=False, enable_dynamic_field=False)
+            schema.add_field("id", DataType.VARCHAR, is_primary=True, max_length=255)
+            schema.add_field("merchant_name", DataType.VARCHAR, max_length=255)
+            schema.add_field("embedding", DataType.FLOAT_VECTOR, dim=VECTOR_DIM)
 
-            index_params = {
-                "metric_type": "COSINE",
-                "index_type": "HNSW",
-                "params": {"M": 8, "efConstruction": 200}
-            }
-            client.create_index(self.behavior_col_name, "embedding", index_params)
-            logger.info("Created HNSW index on embedding field")
+            index_params = client.prepare_index_params()
+            index_params.add_index(
+                field_name="embedding",
+                index_type="HNSW",
+                metric_type="COSINE",
+                params={"M": 8, "efConstruction": 200},
+            )
+
+            client.create_collection(self.behavior_col_name, schema=schema, index_params=index_params)
+            logger.info("Created Milvus collection: %s", self.behavior_col_name)
 
         # Load collection into memory
         client.load_collection(self.behavior_col_name)

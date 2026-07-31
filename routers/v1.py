@@ -1,21 +1,24 @@
 import re
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 
+from core.jwt_auth import get_current_user
 from core.rate_limiter import limiter
 from database.mongo import db
 from engines.confidence_engine import confidence_engine
 from engines.rule_engine import rule_engine
-from models.schemas import CategorizeRequest, CategorizeResponse, ConfidenceEvaluation, ResolutionResult
+from models.schemas import CategorizeRequest, CategorizeResponse, ConfidenceEvaluation, ResolutionResult, User
 from services.merchant_resolver import merchant_resolver
 
 router = APIRouter(prefix="/v1", tags=["Transaction Intelligence"])
 
 @router.post("/categorize", response_model=CategorizeResponse)
 @limiter.limit("50/minute")
-async def categorize_transaction(request: Request, payload: CategorizeRequest):
+async def categorize_transaction(
+    request: Request, payload: CategorizeRequest, current_user: User = Depends(get_current_user)
+):
     # Process text through the Rule Engine
     result = rule_engine.categorize(payload.text)
 
@@ -29,7 +32,7 @@ async def categorize_transaction(request: Request, payload: CategorizeRequest):
 
     # 2. Save the fully enriched transaction to MongoDB
     insert_result = await db.transactions.insert_one({
-        "user_id": "user_123", # Hardcoded for now so it perfectly matches your Analytics mock user
+        "user_id": current_user.id,
         "raw_text": text_content,
         "merchant": result["merchant"],
         "category": result["category"],

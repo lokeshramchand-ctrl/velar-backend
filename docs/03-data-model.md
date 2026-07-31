@@ -17,8 +17,16 @@ All Pydantic schemas live in `models/schemas.py`. Every model extends `CoreModel
 | `user_id` | `str` | default `"system_user"` — matches what `routers/v1.py` and `scripts/mock_seeder.py` actually write |
 | `is_mock` | `bool` | default `False` — matches `scripts/mock_seeder.py`'s flag |
 | `timestamp` | `datetime` | default now (UTC) |
+| `statement_id` | `Optional[str]` | Set only by `statements/statement_service.py`; `None` for transactions from `POST /v1/categorize` |
+| `transaction_type` | `TransactionType` (enum: `DEBIT`\|`CREDIT`) | default `DEBIT` |
+| `status` | `TransactionStatus` (enum: `SUCCESS`\|`FAILED`\|`PENDING`) | default `SUCCESS` — Google Pay statements never encode a failure, so statement-sourced transactions are always `SUCCESS` |
+| `counterparty_raw` | `Optional[str]` | The raw "Paid to X"/"Received from X" name, before categorization |
+| `reference_number` | `Optional[str]` | The UPI Transaction ID from the statement - also the dedup key backing the unique partial index on `(user_id, reference_number)`, see §3.2 |
+| `bank` | `Optional[str]` | e.g. `"HDFC Bank"` |
+| `account_last4` | `Optional[str]` | e.g. `"5488"` |
+| `payment_method` | `str` | default `"UPI"` |
 
-Previously had a required `source: str` field that nothing ever wrote, and was missing `user_id`/`is_mock`, which everything actually writes. This model still isn't validated against inserted documents anywhere (Motor writes raw dicts) — that's an intentional simplicity trade-off in this codebase, not a bug.
+Previously had a required `source: str` field that nothing ever wrote, and was missing `user_id`/`is_mock`, which everything actually writes. This model still isn't validated against inserted documents anywhere (Motor writes raw dicts) — that's an intentional simplicity trade-off in this codebase, not a bug. All statement-derived fields are optional/defaulted so `POST /v1/categorize`'s existing write path (`routers/v1.py`) needed zero changes when they were added.
 
 ### `Feedback`
 | Field | Type | Notes |
@@ -83,21 +91,121 @@ Backing collection: `merchant_profiles`. Written/read exclusively through `repos
 
 Backing collection: `behavior_patterns`. Written only by `behaviour/behavior_engine.py` (not wired to any HTTP endpoint — see [01 · Architecture §1.9](./01-architecture.md#19-what-is-not-wired-into-the-http-surface)). Also gains a non-schema field `discovered_cluster` when written by `clustering/cluster_engine.py::_persist_clusters` (Mongo is schemaless at the driver level, so this is a silent extension not reflected in the Pydantic model).
 
+### `User`
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `Optional[str]` (alias `_id`) | Mongo's own ObjectId, stringified — this is the value encoded as the JWT `sub` claim |
+| `email` | `EmailStr` | Lowercased before storage (see `RegisterRequest`/`LoginRequest`); unique index, see §3.2 |
+| `hashed_password` | `str` | Argon2id hash (`core/security.py::hash_password`) — never serialized in any API response |
+| `full_name` | `Optional[str]` | The only field editable via `PATCH /users/me` |
+| `is_active` | `bool` | default `True` |
+| `created_at`, `updated_at` | `datetime` | default now (UTC) |
+
+`UserPublic` is the response-safe counterpart — a deliberately separate model (not `User` with a field excluded) so a future field added to `User` can never leak into a response by accident: `{ id, email, full_name, is_active, created_at }`. `User.to_public()` performs the conversion explicitly, field-by-field.
+
+Backing collection: `users`. Written/read exclusively through `repositories/user_repository.py`.
+
+### Refresh token documents
+Not a Pydantic model — `repositories/refresh_token_repository.py` writes/reads plain dicts directly, since nothing outside that repository ever needs to construct or validate one.
+
+| Field | Type | Notes |
+|---|---|---|
+| `user_id` | `str` | References `User.id` |
+| `token_hash` | `str` | SHA-256 hex digest of the opaque refresh token; the raw token itself is never persisted |
+| `expires_at` | `datetime` | Backs the TTL index, see §3.2 |
+| `created_at` | `datetime` | |
+| `revoked_at` | `Optional[datetime]` | `None` while active; set on rotation, logout, or reuse-detection mass-revocation |
+
+Backing collection: `refresh_tokens`.
+
+### `Statement`
+Full pipeline context in [23 · Statement Ingestion Pipeline](./23-statements-pipeline.md).
+
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `Optional[str]` (alias `_id`) | |
+| `user_id` | `str` | Owner - every `/statements/*` endpoint enforces this |
+| `original_filename` | `str` | |
+| `file_size_bytes` | `int` | |
+| `page_count` | `Optional[int]` | |
+| `pdf_metadata` | `Optional[Dict[str, str]]` | Best-effort, whatever `pypdf`'s document-info dictionary yields |
+| `gridfs_file_id` | `Optional[str]` | The retained original PDF, see §3.2 |
+| `period_start`, `period_end` | `date` | Parsed from the statement itself - can span multiple calendar months, so there is deliberately no `statement_month`/`statement_year` field |
+| `declared_sent_amount`, `declared_received_amount` | `Optional[float]` | From the statement's own Sent/Received header |
+| `computed_sent_amount`, `computed_received_amount` | `Optional[float]` | Sum of what was actually parsed |
+| `reconciliation_ok` | `Optional[bool]` | Whether declared and computed match within a small epsilon |
+| `transaction_count` | `int` | default `0` |
+| `processing_status` | `StatementStatus` (enum: `PENDING`\|`PROCESSING`\|`COMPLETED`\|`FAILED`) | |
+| `current_job_id` | `Optional[str]` | References the most recent `Job` |
+| `error_message` | `Optional[str]` | Sanitized/generic on failure - full detail is always logged server-side, never persisted here |
+| `analytics` | `Optional[StatementAnalytics]` (embedded) | Computed once, not recomputed per `GET` |
+| `insights` | `List[InsightItem]` (embedded) | Computed once; may legitimately be empty |
+| `analytics_version` | `str` | default `"1.0"` |
+| `uploaded_at`, `processing_started_at`, `processing_completed_at` | `datetime` | |
+| `processing_duration_ms` | `Optional[int]` | |
+
+Backing collection: `statements`. Written/read exclusively through `repositories/statement_repository.py`.
+
+### `StatementAnalytics` (embedded in `Statement.analytics`)
+| Field | Type |
+|---|---|
+| `total_spend`, `total_income`, `net`, `average_transaction_value` | `float` |
+| `transaction_count`, `failed_transaction_count` | `int` |
+| `category_breakdown` | `List[CategoryBreakdownItem]` (`category`, `total_amount`, `count`) |
+| `top_merchants` | `List[MerchantSpendItem]` (`merchant`, `total_amount`, `count`) - DEBIT only |
+| `daily_trend` | `List[DailyTrendItem]` (`date`, `total_amount`, `count`) - DEBIT only |
+| `recurring_payments` | `List[RecurringPaymentItem]` (`merchant`, `estimated_monthly_cost`, `periodicity_score`, `occurrences`) |
+| `generated_at` | `datetime` |
+
+Computed by `analytics/statement_analytics.py`, filtered by `{user_id, statement_id}` rather than a date range.
+
+### `InsightItem` (embedded in `Statement.insights`)
+`{ type: str, message: str, severity: "INFO"|"POSITIVE"|"WARNING" }`. Generated by `insights/statement_insights.py`, grounded strictly in the `StatementAnalytics` above - never given raw transaction rows.
+
+### `Job`
+| Field | Type | Notes |
+|---|---|---|
+| `id` | `Optional[str]` (alias `_id`) | |
+| `user_id` | `str` | Owner |
+| `job_type` | `JobType` (currently only `STATEMENT_PROCESSING`) | Generic on purpose - future job types can reuse this model without a schema change |
+| `resource_type` | `str` | default `"statement"` |
+| `resource_id` | `str` | The `Statement.id` this job processes |
+| `status` | `JobStatus` (enum: `QUEUED`\|`RUNNING`\|`COMPLETED`\|`FAILED`) | |
+| `stage` | `Optional[str]` | Human-readable progress label, e.g. `"generating_insights"` |
+| `progress_percent` | `int` | default `0` |
+| `error_message` | `Optional[str]` | Sanitized/generic |
+| `created_at`, `started_at`, `completed_at` | `Optional[datetime]` | |
+
+Backing collection: `jobs`. Written/read exclusively through `repositories/job_repository.py`.
+
 ## 3.2 MongoDB collections
 
 Declared in `database/mongo.py::MongoDB.connect`:
 
 | Collection | Written by | Read by |
 |---|---|---|
-| `transactions` | `routers/v1.py` (categorize, buggy), `scripts/mock_seeder.py` | `analytics/*.py`, `behaviour/behavior_engine.py` |
+| `transactions` | `routers/v1.py` (categorize, buggy), `scripts/mock_seeder.py`, `statements/statement_service.py` | `analytics/*.py`, `behaviour/behavior_engine.py`, `repositories/transaction_repository.py` |
 | `feedback` | `feedback/feedback_service.py` | `rag/retriever.py`, `graphs/graph_builder.py` |
 | `categories` | *(nothing)* | *(nothing)* |
 | `merchants` | `scripts/seed.py` | `services/merchant_resolver.py` |
 | `merchant_profiles` | `repositories/profile_repository.py` | `repositories/profile_repository.py`, `rag/retriever.py`, `graphs/graph_builder.py` |
-| `behavior_patterns` | `behaviour/behavior_engine.py`, `clustering/cluster_engine.py` (adds `discovered_cluster`) | `analytics/anomaly_detection.py`, `analytics/subscriptions.py`, `rag/retriever.py`, `graphs/graph_builder.py` |
+| `behavior_patterns` | `behaviour/behavior_engine.py`, `clustering/cluster_engine.py` (adds `discovered_cluster`) | `analytics/anomaly_detection.py`, `analytics/subscriptions.py`, `rag/retriever.py`, `graphs/graph_builder.py`, `analytics/statement_analytics.py` |
 | `retraining_queue` | `feedback/retraining_queue.py` (via `feedback_service`) | `feedback/retraining_queue.py::check_retraining_status` |
+| `users` | `repositories/user_repository.py` | `repositories/user_repository.py`, `core/jwt_auth.py::get_current_user` |
+| `refresh_tokens` | `repositories/refresh_token_repository.py` | `repositories/refresh_token_repository.py` |
+| `statements` | `repositories/statement_repository.py` | `repositories/statement_repository.py`, `routers/statements.py` |
+| `jobs` | `repositories/job_repository.py` | `repositories/job_repository.py`, `routers/jobs.py` |
+| `fs.statement_pdfs.files` / `.chunks` (GridFS) | `repositories/statement_repository.py::store_pdf` (`AsyncIOMotorGridFSBucket`, bucket name `statement_pdfs`) | `repositories/statement_repository.py::delete_pdf` |
 
-No indexes are created programmatically anywhere in this codebase (no `create_index` calls) — all queries above run against unindexed collections by default.
+`database/mongo.py::ensure_indexes()` (called once from `app.py`'s `lifespan`) creates indexes for every query pattern that actually needs one, including:
+- `users.email` — unique (backs the register-time uniqueness guarantee; also what every login/`/users/me` lookup queries on)
+- `refresh_tokens.token_hash` — unique (looked up on every `/auth/refresh` call)
+- `refresh_tokens.user_id` — supports the mass-revocation query used on logout-all/reuse-detection
+- `refresh_tokens.expires_at` — TTL index (`expireAfterSeconds=0`), so MongoDB itself sweeps expired refresh token documents without a separate cleanup job
+- `transactions.(user_id, reference_number)` — unique, **partial** (`partialFilterExpression: {reference_number: {$exists: true}}` so it never constrains `POST /v1/categorize`'s writes, which have no `reference_number`) — the idempotent-re-upload guarantee described in [23 · Statement Ingestion Pipeline §23.7](./23-statements-pipeline.md#237-data-safety-and-idempotency)
+- `transactions.statement_id`, `statements.user_id`, `statements.(user_id, processing_status)`, `jobs.user_id`, `jobs.resource_id`
+
+See [22 · Authentication §22.7](./22-authentication.md#227-data-model) for how the auth indexes back the auth flows.
 
 ## 3.3 Milvus vector schema
 
