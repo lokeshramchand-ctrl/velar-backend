@@ -1,0 +1,399 @@
+import 'package:collection/collection.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../core/theme/app_colors.dart';
+import '../../statements/domain/statement_analytics.dart';
+import '../../../core/theme/app_radius.dart';
+import '../../../core/theme/app_spacing.dart';
+import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/formatters.dart';
+import '../../../shared/widgets/app_buttons.dart';
+import '../../../shared/widgets/avatar_chip.dart';
+import '../../../shared/widgets/category_bar_row.dart';
+import '../../../shared/widgets/delta_chip.dart';
+import '../../../shared/widgets/period_pill.dart';
+import '../../../shared/widgets/section_header.dart';
+import '../../../shared/widgets/signal_card.dart';
+import '../../auth/presentation/auth_controller.dart';
+import '../../auth/presentation/auth_state.dart';
+import '../../statements/domain/insight.dart';
+import '../../statements/domain/statement.dart';
+import '../../statements/presentation/period_providers.dart';
+import 'period_switcher_sheet.dart';
+
+class OverviewScreen extends ConsumerStatefulWidget {
+  const OverviewScreen({super.key});
+
+  @override
+  ConsumerState<OverviewScreen> createState() => _OverviewScreenState();
+}
+
+class _OverviewScreenState extends ConsumerState<OverviewScreen> {
+  bool _categoriesExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final periodsAsync = ref.watch(periodsProvider);
+
+    return Scaffold(
+      backgroundColor: AppColors.paper,
+      body: periodsAsync.when(
+        loading: () => Center(child: CircularProgressIndicator(color: AppColors.accent)),
+        error: (error, _) => _ErrorRetry(onRetry: () => ref.invalidate(periodsProvider)),
+        data: (periods) {
+          final current = ref.watch(currentPeriodProvider);
+          if (current == null) {
+            return _ErrorRetry(onRetry: () => ref.invalidate(periodsProvider), message: 'No periods yet.');
+          }
+          if (current.processingStatus != ProcessingStatus.completed) {
+            return _ProcessingPlaceholder(period: current);
+          }
+          return RefreshIndicator(
+            color: AppColors.accent,
+            onRefresh: () async {
+              ref.invalidate(periodsProvider);
+              ref.invalidate(currentPeriodAnalyticsProvider);
+              ref.invalidate(currentPeriodInsightsProvider);
+            },
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _Header(period: current),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 24, AppSpacing.gutter, 108),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SignalsPreview(),
+                        const SizedBox(height: 26),
+                        _CategoryBreakdown(expanded: _categoriesExpanded, onExpand: () => setState(() => _categoriesExpanded = true)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _Header extends ConsumerWidget {
+  const _Header({required this.period});
+  final Statement period;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final analyticsAsync = ref.watch(currentPeriodAnalyticsProvider);
+    final previousAsync = ref.watch(previousPeriodAnalyticsProvider);
+    final authState = ref.watch(authControllerProvider).valueOrNull;
+    final initials = switch (authState) {
+      AuthAuthenticated(:final user) => (user.fullName?.trim().isNotEmpty ?? false)
+          ? user.fullName!.trim().split(RegExp(r'\s+')).map((w) => w[0]).take(2).join().toUpperCase()
+          : user.email.substring(0, 1).toUpperCase(),
+      _ => '?',
+    };
+
+    return Container(
+      color: AppColors.ink900,
+      padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 6, AppSpacing.gutter, 26),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              PeriodPill(
+                label: formatPeriodRange(period.periodStart, period.periodEnd),
+                onTap: () => showPeriodSwitcher(context, ref),
+              ),
+              const Spacer(),
+              Container(
+                width: 34,
+                height: 34,
+                margin: const EdgeInsets.only(right: 10),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: AppColors.ink800, border: Border.all(color: AppColors.hairlineDark), shape: BoxShape.circle),
+                child: Icon(Icons.notifications_none_rounded, size: 17, color: AppColors.onDarkMuted),
+              ),
+              GestureDetector(
+                onTap: () => context.push('/profile'),
+                child: AvatarChip(
+                  initials: initials,
+                  size: 34,
+                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentDim]),
+                  foregroundColor: AppColors.accentInk,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          Text('NET FLOW · ${_spanLabel(period)}', style: AppTypography.microLabel11.copyWith(color: AppColors.onDarkFaint)),
+          const SizedBox(height: 6),
+          analyticsAsync.when(
+            loading: () => const SizedBox(height: 44),
+            error: (e, _) => Text('Could not load analytics.', style: AppTypography.footnote12.copyWith(color: AppColors.rose)),
+            data: (analytics) {
+              if (analytics == null) return const SizedBox.shrink();
+              final net = analytics.totalIncome - analytics.totalSpend;
+              double? deltaPercent;
+              final previous = previousAsync.valueOrNull;
+              if (previous != null) {
+                final prevNet = previous.totalIncome - previous.totalSpend;
+                if (prevNet != 0) deltaPercent = (net - prevNet) / prevNet.abs() * 100;
+              }
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(formatCurrency(net), style: AppTypography.heroAmount44.copyWith(color: AppColors.onDark)),
+                      if (deltaPercent != null) ...[
+                        const SizedBox(width: 10),
+                        DeltaChip(
+                          label: '${deltaPercent >= 0 ? '▲' : '▼'} ${deltaPercent.abs().round()}%',
+                          up: deltaPercent >= 0,
+                          tint: (deltaPercent >= 0 ? AppColors.rose : AppColors.accent).withValues(alpha: 0.16),
+                          foreground: deltaPercent >= 0 ? AppColors.rose : AppColors.accent,
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: SizedBox(
+                      height: 8,
+                      child: Row(
+                        children: [
+                          Expanded(flex: analytics.totalSpend.round().clamp(1, 1 << 30), child: Container(color: AppColors.rose)),
+                          const SizedBox(width: 3),
+                          Expanded(flex: analytics.totalIncome.round().clamp(1, 1 << 30), child: Container(color: AppColors.accent)),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('SENT', style: AppTypography.microLabel11.copyWith(color: AppColors.onDarkFaint)),
+                          Text(formatCurrency(analytics.totalSpend), style: AppTypography.amountMedium17.copyWith(color: AppColors.onDark)),
+                        ],
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('RECEIVED', style: AppTypography.microLabel11.copyWith(color: AppColors.onDarkFaint)),
+                          Text(formatCurrency(analytics.totalIncome), style: AppTypography.amountMedium17.copyWith(color: AppColors.accentDim)),
+                        ],
+                      ),
+                    ],
+                  ),
+                  if (period.reconciliationOk != null) ...[
+                    const SizedBox(height: 14),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
+                      decoration: BoxDecoration(color: AppColors.ink850, border: Border.all(color: AppColors.hairlineDark), borderRadius: BorderRadius.circular(AppRadius.field)),
+                      child: Row(
+                        children: [
+                          Icon(
+                            period.reconciliationOk! ? Icons.check_rounded : Icons.info_outline_rounded,
+                            size: 15,
+                            color: period.reconciliationOk! ? AppColors.accent : AppColors.amber,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              period.reconciliationOk!
+                                  ? "Reconciled against the statement's own totals"
+                                  : "Doesn't quite match the statement's declared totals",
+                              style: AppTypography.body14.copyWith(fontSize: 12, color: AppColors.onDarkMuted),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _spanLabel(Statement period) {
+    final months = (period.periodEnd.year - period.periodStart.year) * 12 + (period.periodEnd.month - period.periodStart.month) + 1;
+    return months <= 1 ? '1 MONTH' : '$months MONTHS';
+  }
+}
+
+class _SignalsPreview extends ConsumerWidget {
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final insightsAsync = ref.watch(currentPeriodInsightsProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SectionHeader(
+          label: 'SIGNALS',
+          labelColor: AppColors.onLightFaint,
+          trailing: TextActionLink(label: 'All →', onPressed: () => context.go('/shell/signals')),
+        ),
+        const SizedBox(height: 12),
+        insightsAsync.when(
+          loading: () => const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: CircularProgressIndicator())),
+          error: (e, _) => Text('Could not load signals.', style: AppTypography.footnote12.copyWith(color: AppColors.onLightMuted)),
+          data: (insights) {
+            if (insights.isEmpty) {
+              return Text('No signals yet for this period.', style: AppTypography.footnote12.copyWith(color: AppColors.onLightMuted));
+            }
+            final preview = insights.take(2).toList();
+            return Column(
+              children: [
+                for (var i = 0; i < preview.length; i++) ...[
+                  SignalCard(
+                    kind: _kindFor(preview[i].severity),
+                    subtype: preview[i].type.toUpperCase(),
+                    body: preview[i].message,
+                    dark: false,
+                    entranceDelayMs: i * 60,
+                  ),
+                  if (i != preview.length - 1) const SizedBox(height: 12),
+                ],
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  SignalKind _kindFor(InsightSeverity severity) => switch (severity) {
+        InsightSeverity.warning => SignalKind.watch,
+        InsightSeverity.positive => SignalKind.good,
+        InsightSeverity.info => SignalKind.context,
+      };
+}
+
+class _CategoryBreakdown extends ConsumerWidget {
+  const _CategoryBreakdown({required this.expanded, required this.onExpand});
+  final bool expanded;
+  final VoidCallback onExpand;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final analyticsAsync = ref.watch(currentPeriodAnalyticsProvider);
+    final previousAsync = ref.watch(previousPeriodAnalyticsProvider);
+
+    return analyticsAsync.when(
+      loading: () => const Padding(padding: EdgeInsets.symmetric(vertical: 20), child: Center(child: CircularProgressIndicator())),
+      error: (e, _) => const SizedBox.shrink(),
+      data: (analytics) {
+        if (analytics == null || analytics.categoryBreakdown.isEmpty) return const SizedBox.shrink();
+        final sorted = [...analytics.categoryBreakdown]..sort((a, b) => b.totalAmount.compareTo(a.totalAmount));
+        final totalOfShown = analytics.totalSpend;
+        final maxAmount = sorted.first.totalAmount == 0 ? 1 : sorted.first.totalAmount;
+        final visible = expanded ? sorted : sorted.take(4).toList();
+        final previousCategories = previousAsync.valueOrNull?.categoryBreakdown;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SectionHeader(
+              label: 'WHERE IT WENT',
+              labelColor: AppColors.onLightFaint,
+              trailing: Text('of ${formatCurrency(totalOfShown)}', style: AppTypography.body14.copyWith(fontSize: 12, color: AppColors.onLightFaint)),
+            ),
+            const SizedBox(height: 4),
+            for (final entry in visible)
+              CategoryBarRow(
+                name: entry.category,
+                amountLabel: formatCurrency(entry.totalAmount),
+                percentOfTotal: totalOfShown == 0 ? 0 : (entry.totalAmount / totalOfShown * 100).round(),
+                relativeWidthFraction: entry.totalAmount / maxAmount,
+                color: AppColors.forCategory(entry.category),
+                trendCaption: _trendCaption(entry.category, entry.totalAmount, previousCategories),
+                onTap: () => context.push('/category/${Uri.encodeComponent(entry.category)}'),
+              ),
+            if (!expanded && sorted.length > 4) ...[
+              const SizedBox(height: 8),
+              TextActionLink(label: 'Show ${sorted.length - 4} more categories', onPressed: onExpand),
+            ],
+          ],
+        );
+      },
+    );
+  }
+
+  String? _trendCaption(String category, double current, List<CategoryBreakdownEntry>? previousCategories) {
+    if (previousCategories == null) return null;
+    final match = previousCategories.firstWhereOrNull((e) => e.category == category);
+    if (match == null || match.totalAmount == 0) return null;
+    final delta = (current - match.totalAmount) / match.totalAmount * 100;
+    final arrow = delta <= 0 ? '↓' : '↑';
+    return '$arrow ${delta.abs().round()}% vs previous period';
+  }
+}
+
+class _ProcessingPlaceholder extends StatelessWidget {
+  const _ProcessingPlaceholder({required this.period});
+  final Statement period;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.gutter),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: AppColors.accent),
+            const SizedBox(height: 20),
+            Text("We're still analysing your statement", textAlign: TextAlign.center, style: AppTypography.bigHeadline22.copyWith(color: AppColors.onLight)),
+            const SizedBox(height: 8),
+            Text(period.originalFilename, textAlign: TextAlign.center, style: AppTypography.footnote12.copyWith(color: AppColors.onLightMuted)),
+            const SizedBox(height: 20),
+            if (period.currentJobId != null)
+              PrimaryPillButton(
+                label: 'View progress',
+                expand: false,
+                onPressed: () => context.push('/upload/analysing/${period.currentJobId}'),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorRetry extends StatelessWidget {
+  const _ErrorRetry({required this.onRetry, this.message});
+  final VoidCallback onRetry;
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(message ?? 'Something went wrong.', style: AppTypography.footnote15.copyWith(color: AppColors.onLightMuted)),
+          const SizedBox(height: 14),
+          PrimaryPillButton(label: 'Retry', expand: false, onPressed: onRetry),
+        ],
+      ),
+    );
+  }
+}
