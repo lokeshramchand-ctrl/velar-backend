@@ -35,6 +35,7 @@ class ScreenBackHeader extends StatelessWidget {
     final color = dark ? AppColors.onDark : AppColors.onLight;
     final backButton = IconButton(
       padding: EdgeInsets.zero,
+      tooltip: 'Back',
       icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: color),
       onPressed: onBack ?? () => context.pop(),
     );

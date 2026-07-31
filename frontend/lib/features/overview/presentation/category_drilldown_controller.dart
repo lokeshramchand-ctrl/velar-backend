@@ -30,7 +30,12 @@ class CategoryDrilldown {
 /// merchant/monthly breakdown endpoint, so this derives it from the same
 /// real transaction records Activity uses. Capped at 3 pages (300 txns) as
 /// a sane bound for a single category within one statement.
-final categoryDrilldownProvider = FutureProvider.family<CategoryDrilldown, String>((ref, category) async {
+///
+/// `autoDispose` because this is keyed per-category: without it, every
+/// category the user ever drills into (each holding up to 300 fetched
+/// transactions) would stay cached for the app's lifetime instead of being
+/// released once the drilldown screen closes.
+final categoryDrilldownProvider = FutureProvider.autoDispose.family<CategoryDrilldown, String>((ref, category) async {
   final period = ref.watch(currentPeriodProvider);
   if (period == null) return const CategoryDrilldown(merchants: [], monthlyBuckets: []);
 

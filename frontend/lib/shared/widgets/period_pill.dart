@@ -13,25 +13,35 @@ class PeriodPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(100),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
-        decoration: BoxDecoration(
-          color: AppColors.ink800,
-          border: Border.all(color: AppColors.hairlineDark),
+    return Semantics(
+      button: true,
+      excludeSemantics: true,
+      label: 'Switch period, currently $label',
+      child: SizedBox(
+        height: 44,
+        child: InkWell(
+          onTap: onTap,
           borderRadius: BorderRadius.circular(100),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 6, height: 6, decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle)),
-            const SizedBox(width: 8),
-            Text(label, style: AppTypography.buttonLabel14.copyWith(color: AppColors.onDark)),
-            const SizedBox(width: 4),
-            Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: AppColors.onDark),
-          ],
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 7),
+              decoration: BoxDecoration(
+                color: AppColors.ink800,
+                border: Border.all(color: AppColors.hairlineDark),
+                borderRadius: BorderRadius.circular(100),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(width: 6, height: 6, decoration: BoxDecoration(color: AppColors.accent, shape: BoxShape.circle)),
+                  const SizedBox(width: 8),
+                  Text(label, style: AppTypography.buttonLabel14.copyWith(color: AppColors.onDark)),
+                  const SizedBox(width: 4),
+                  Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: AppColors.onDark),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
     );

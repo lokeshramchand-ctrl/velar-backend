@@ -4,6 +4,28 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<!-- iOS App Transport Security blocks cleartext (HTTP) by default.
+	     AppConfig.apiBaseUrl's default local-dev URL is plain HTTP against a
+	     backend on the host machine, reached from the simulator as
+	     localhost/127.0.0.1 - scoped here rather than a blanket ATS
+	     exception, so any real HTTPS production API stays fully covered by
+	     the OS's default policy. -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+			<key>127.0.0.1</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

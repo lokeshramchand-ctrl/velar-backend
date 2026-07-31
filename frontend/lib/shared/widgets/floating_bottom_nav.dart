@@ -32,29 +32,35 @@ class FloatingBottomNav extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           for (var i = 0; i < tabs.length; i++)
-            GestureDetector(
-              onTap: () => onTap(i),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(
-                  color: i == currentIndex ? AppColors.ink700 : Colors.transparent,
-                  borderRadius: BorderRadius.circular(100),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (i == currentIndex) ...[
-                      Icon(tabs[i].icon, size: 14, color: AppColors.accent),
-                      const SizedBox(width: 6),
-                    ],
-                    Text(
-                      tabs[i].label,
-                      style: AppTypography.buttonLabel13.copyWith(
-                        color: i == currentIndex ? AppColors.onDark : AppColors.onDarkFaint,
+            Semantics(
+              button: true,
+              selected: i == currentIndex,
+              excludeSemantics: true,
+              label: tabs[i].label,
+              child: GestureDetector(
+                onTap: () => onTap(i),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: i == currentIndex ? AppColors.ink700 : Colors.transparent,
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (i == currentIndex) ...[
+                        Icon(tabs[i].icon, size: 14, color: AppColors.accent),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        tabs[i].label,
+                        style: AppTypography.buttonLabel13.copyWith(
+                          color: i == currentIndex ? AppColors.onDark : AppColors.onDarkFaint,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),

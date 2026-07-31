@@ -6,8 +6,12 @@
 abstract final class AppConfig {
   static const String apiBaseUrl = String.fromEnvironment(
     'VELAR_API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8000',
+    defaultValue: 'https://velar.deploy.lokeshrc.me/',
   );
 
-  static const String apiKey = String.fromEnvironment('VELAR_API_KEY');
+  static const String apiKey = String.fromEnvironment(
+    'VELAR_API_KEY',
+    defaultValue:
+        'velar_test_key_123', // or remove if you don't want a fallback
+  );
 }

@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers/feature_providers.dart';
 import '../domain/insight.dart';
+import '../domain/job.dart';
 import '../domain/statement.dart';
 import '../domain/statement_analytics.dart';
 
@@ -17,6 +18,15 @@ final periodsProvider = FutureProvider<List<Statement>>((ref) async {
   final repo = ref.watch(statementsRepositoryProvider);
   final res = await repo.list(page: 1, pageSize: 50, sortBy: 'uploaded_at', sortOrder: 'desc');
   return res.items;
+});
+
+/// A single job snapshot (not polled) - for the Period switcher's live row,
+/// which just needs one progress reading, not a ticking subscription.
+/// `autoDispose` + `family` so Riverpod caches/dedupes this across rebuilds
+/// instead of a bare `ref.read(...).get(id)` re-firing the request (and
+/// resetting to "loading") every time the sheet rebuilds.
+final jobSnapshotProvider = FutureProvider.autoDispose.family<Job, String>((ref, jobId) {
+  return ref.watch(jobsRepositoryProvider).get(jobId);
 });
 
 final currentPeriodProvider = Provider<Statement?>((ref) {

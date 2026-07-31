@@ -64,7 +64,7 @@ class RecurringScreen extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (payments.isEmpty)
-                        EmptyState(
+                        const EmptyState(
                           icon: Icons.repeat_rounded,
                           title: 'No recurring payments detected yet',
                           subtitle: 'Velar looks for merchants you pay on a regular cadence within this period.',

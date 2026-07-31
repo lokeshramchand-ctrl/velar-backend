@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_typography.dart';
+import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/app_buttons.dart';
 import '../../../shared/widgets/bottom_sheet_scaffold.dart';
 import '../../../shared/widgets/sweep_progress_bar.dart';
@@ -115,6 +116,7 @@ class _UploadingSheetBodyState extends ConsumerState<_UploadingSheetBody> {
             ),
             if (state.stage == UploadStage.uploading)
               IconButton(
+                tooltip: 'Cancel upload',
                 icon: Icon(Icons.close_rounded, color: AppColors.onDarkFaint, size: 18),
                 onPressed: () {
                   controller.cancel();

@@ -66,7 +66,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   style: AppTypography.footnote15.copyWith(color: AppColors.onDarkMuted),
                 ),
                 const SizedBox(height: 32),
-                _FieldLabel('EMAIL'),
+                const _FieldLabel('EMAIL'),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _emailController,
@@ -81,7 +81,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   },
                 ),
                 const SizedBox(height: 18),
-                _FieldLabel('PASSWORD'),
+                const _FieldLabel('PASSWORD'),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _passwordController,
@@ -90,6 +90,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   autofillHints: const [AutofillHints.password],
                   decoration: _fieldDecoration('••••••••').copyWith(
                     suffixIcon: IconButton(
+                      tooltip: _obscure ? 'Show password' : 'Hide password',
                       icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.onDarkFaint),
                       onPressed: () => setState(() => _obscure = !_obscure),
                     ),

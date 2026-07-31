@@ -17,8 +17,6 @@ import '../../../shared/widgets/skeleton.dart';
 import '../../statements/presentation/period_providers.dart';
 import 'category_drilldown_controller.dart';
 
-const _monthAbbr = ['', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
-
 class CategoryDrilldownScreen extends ConsumerWidget {
   const CategoryDrilldownScreen({super.key, required this.category});
 
@@ -88,7 +86,7 @@ class CategoryDrilldownScreen extends ConsumerWidget {
                           entries: [
                             for (var i = 0; i < drilldown.monthlyBuckets.length; i++)
                               MiniBarChartEntry(
-                                label: _monthAbbr[drilldown.monthlyBuckets[i].month],
+                                label: monthAbbr(drilldown.monthlyBuckets[i].month),
                                 heightFraction: maxTotal == 0 ? 0.02 : (drilldown.monthlyBuckets[i].total / maxTotal).clamp(0.02, 1),
                                 highlighted: i == drilldown.monthlyBuckets.length - 1,
                                 tooltip: i == drilldown.monthlyBuckets.length - 1 ? formatCompactCurrency(drilldown.monthlyBuckets[i].total) : null,
@@ -119,7 +117,7 @@ class CategoryDrilldownScreen extends ConsumerWidget {
                       error: (e, _) => ErrorRetry(onRetry: () => ref.invalidate(categoryDrilldownProvider(category)), message: 'Could not load merchants.'),
                       data: (drilldown) {
                         if (drilldown.merchants.isEmpty) {
-                          return EmptyState(
+                          return const EmptyState(
                             icon: Icons.receipt_outlined,
                             title: 'No transactions found for this category yet',
                           );

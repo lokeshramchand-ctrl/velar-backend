@@ -77,7 +77,7 @@ class ProfileScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 26),
-            _SectionLabel('DATA'),
+            const _SectionLabel('DATA'),
             const SizedBox(height: 10),
             _Card(
               children: [
@@ -92,7 +92,7 @@ class ProfileScreen extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 22),
-            _SectionLabel('APPEARANCE & ALERTS'),
+            const _SectionLabel('APPEARANCE & ALERTS'),
             const SizedBox(height: 10),
             _Card(
               children: [
@@ -173,7 +173,7 @@ class ProfileScreen extends ConsumerWidget {
     try {
       await ref.read(authRepositoryProvider).updateProfile(fullName: result.isEmpty ? null : result);
       ref.invalidate(authControllerProvider);
-      messenger.showSnackBar(SnackBar(content: Text('Name updated'), backgroundColor: AppColors.ink700));
+      messenger.showSnackBar(SnackBar(content: const Text('Name updated'), backgroundColor: AppColors.ink700));
     } on ApiException catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message), backgroundColor: AppColors.rose));
     }
@@ -183,7 +183,7 @@ class ProfileScreen extends ConsumerWidget {
     final period = ref.read(currentPeriodProvider);
     final messenger = ScaffoldMessenger.of(context);
     if (period == null) {
-      messenger.showSnackBar(SnackBar(content: Text('Add a statement first to export its transactions.'), backgroundColor: AppColors.ink700));
+      messenger.showSnackBar(SnackBar(content: const Text('Add a statement first to export its transactions.'), backgroundColor: AppColors.ink700));
       return;
     }
     try {

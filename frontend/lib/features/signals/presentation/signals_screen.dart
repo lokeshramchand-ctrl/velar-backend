@@ -44,7 +44,7 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
                 Text('Signals', style: AppTypography.screenTitle24.copyWith(color: AppColors.onDark)),
                 if (period != null)
                   Text(
-                    '${_monthAbbr(period.periodStart.month)}–${_monthAbbr(period.periodEnd.month)} ${period.periodEnd.year}'.toUpperCase(),
+                    '${monthAbbr(period.periodStart.month)}–${monthAbbr(period.periodEnd.month)} ${period.periodEnd.year}'.toUpperCase(),
                     style: AppTypography.microLabel11.copyWith(color: AppColors.onDarkFaint),
                   ),
               ],
@@ -111,7 +111,7 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
               loading: () => Column(
                 children: [
                   for (var i = 0; i < 3; i++) ...[
-                    SkeletonBox(width: double.infinity, height: 96, radius: 16, dark: true),
+                    const SkeletonBox(width: double.infinity, height: 96, radius: 16, dark: true),
                     if (i != 2) const SizedBox(height: 12),
                   ],
                 ],
@@ -126,7 +126,7 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
                   };
                 }).toList();
                 if (filtered.isEmpty) {
-                  return EmptyState(
+                  return const EmptyState(
                     dark: true,
                     icon: Icons.auto_awesome_outlined,
                     title: 'No signals in this filter yet',
@@ -165,19 +165,21 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
   }
 
   Widget _chip(String label, bool selected, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.ink700 : Colors.transparent,
-          border: Border.all(color: AppColors.hairlineDark),
-          borderRadius: BorderRadius.circular(AppRadius.pill),
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? AppColors.ink700 : Colors.transparent,
+            border: Border.all(color: AppColors.hairlineDark),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+          ),
+          child: Text(label, style: AppTypography.buttonLabel12.copyWith(color: selected ? AppColors.onDark : AppColors.onDarkMuted)),
         ),
-        child: Text(label, style: AppTypography.buttonLabel12.copyWith(color: selected ? AppColors.onDark : AppColors.onDarkMuted)),
       ),
     );
   }
-
-  String _monthAbbr(int m) => const ['', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][m];
 }

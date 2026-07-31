@@ -39,7 +39,7 @@ class ManagePeriodsScreen extends ConsumerWidget {
                   padding: const EdgeInsets.all(AppSpacing.gutter),
                   itemCount: 4,
                   separatorBuilder: (_, _) => const SizedBox(height: 10),
-                  itemBuilder: (context, index) => SkeletonBox(width: double.infinity, height: 68, radius: AppRadius.card, dark: true),
+                  itemBuilder: (context, index) => const SkeletonBox(width: double.infinity, height: 68, radius: AppRadius.card, dark: true),
                 ),
                 error: (e, _) => ErrorRetry(dark: true, message: 'Could not load periods.', onRetry: () => ref.invalidate(periodsProvider)),
                 data: (periods) {
@@ -102,6 +102,7 @@ class _PeriodTileState extends ConsumerState<_PeriodTile> {
             SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.rose))
           else
             IconButton(
+              tooltip: 'Delete ${formatPeriodRange(period.periodStart, period.periodEnd)}',
               icon: Icon(Icons.delete_outline_rounded, color: AppColors.rose, size: 20),
               onPressed: _confirmDelete,
             ),

@@ -94,6 +94,7 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
                   obscureText: _obscure,
                   decoration: _decoration('At least 8 characters').copyWith(
                     suffixIcon: IconButton(
+                      tooltip: _obscure ? 'Show password' : 'Hide password',
                       icon: Icon(_obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined, color: AppColors.onDarkFaint),
                       onPressed: () => setState(() => _obscure = !_obscure),
                     ),

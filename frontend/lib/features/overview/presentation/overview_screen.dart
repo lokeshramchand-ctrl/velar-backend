@@ -119,21 +119,34 @@ class _Header extends ConsumerWidget {
                 onTap: () => showPeriodSwitcher(context, ref),
               ),
               const Spacer(),
-              Container(
-                width: 34,
-                height: 34,
-                margin: const EdgeInsets.only(right: 10),
-                alignment: Alignment.center,
-                decoration: BoxDecoration(color: AppColors.ink800, border: Border.all(color: AppColors.hairlineDark), shape: BoxShape.circle),
-                child: Icon(Icons.notifications_none_rounded, size: 17, color: AppColors.onDarkMuted),
+              ExcludeSemantics(
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  margin: const EdgeInsets.only(right: 10),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(color: AppColors.ink800, border: Border.all(color: AppColors.hairlineDark), shape: BoxShape.circle),
+                  child: Icon(Icons.notifications_none_rounded, size: 17, color: AppColors.onDarkMuted),
+                ),
               ),
-              GestureDetector(
-                onTap: () => context.push('/profile'),
-                child: AvatarChip(
-                  initials: initials,
-                  size: 34,
-                  gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentDim]),
-                  foregroundColor: AppColors.accentInk,
+              Semantics(
+                button: true,
+                label: 'Open profile',
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => context.push('/profile'),
+                    child: Center(
+                      child: AvatarChip(
+                        initials: initials,
+                        size: 34,
+                        gradient: LinearGradient(colors: [AppColors.accent, AppColors.accentDim]),
+                        foregroundColor: AppColors.accentInk,
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -142,15 +155,15 @@ class _Header extends ConsumerWidget {
           Text('NET FLOW · ${_spanLabel(period)}', style: AppTypography.microLabel11.copyWith(color: AppColors.onDarkFaint)),
           const SizedBox(height: 6),
           analyticsAsync.when(
-            loading: () => Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+            loading: () => const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SkeletonBox(width: 180, height: 40, dark: true),
-                  const SizedBox(height: 16),
+                  SizedBox(height: 16),
                   SkeletonBox(width: double.infinity, height: 8, radius: 4, dark: true),
-                  const SizedBox(height: 14),
+                  SizedBox(height: 14),
                   SkeletonBox(width: 120, height: 30, dark: true),
                 ],
               ),
@@ -282,7 +295,7 @@ class _SignalsPreview extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         insightsAsync.when(
-          loading: () => Column(children: [SkeletonBox(width: double.infinity, height: 74, radius: 16), const SizedBox(height: 12), SkeletonBox(width: double.infinity, height: 74, radius: 16)]),
+          loading: () => const Column(children: [SkeletonBox(width: double.infinity, height: 74, radius: 16), SizedBox(height: 12), SkeletonBox(width: double.infinity, height: 74, radius: 16)]),
           error: (e, _) => Text('Could not load signals.', style: AppTypography.footnote12.copyWith(color: AppColors.onLightMuted)),
           data: (insights) {
             if (insights.isEmpty) {
@@ -327,7 +340,7 @@ class _CategoryBreakdown extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             for (var i = 0; i < 4; i++) ...[
-              SkeletonBox(width: double.infinity, height: 34),
+              const SkeletonBox(width: double.infinity, height: 34),
               if (i != 3) const SizedBox(height: 12),
             ],
           ],
@@ -427,23 +440,23 @@ class _OverviewSkeleton extends StatelessWidget {
           Container(
             color: AppColors.ink900,
             padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 6, AppSpacing.gutter, 26),
-            child: Column(
+            child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
                     SkeletonBox(width: 96, height: 30, radius: 100, dark: true),
-                    const Spacer(),
+                    Spacer(),
                     SkeletonBox(width: 34, height: 34, radius: 17, dark: true),
-                    const SizedBox(width: 10),
+                    SizedBox(width: 10),
                     SkeletonBox(width: 34, height: 34, radius: 17, dark: true),
                   ],
                 ),
-                const SizedBox(height: 26),
+                SizedBox(height: 26),
                 SkeletonBox(width: 140, height: 12, dark: true),
-                const SizedBox(height: 10),
+                SizedBox(height: 10),
                 SkeletonBox(width: 180, height: 40, dark: true),
-                const SizedBox(height: 16),
+                SizedBox(height: 16),
                 SkeletonBox(width: double.infinity, height: 8, radius: 4, dark: true),
               ],
             ),
@@ -453,16 +466,16 @@ class _OverviewSkeleton extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SkeletonBox(width: 90, height: 12),
+                const SkeletonBox(width: 90, height: 12),
                 const SizedBox(height: 12),
-                SkeletonBox(width: double.infinity, height: 74, radius: 16),
+                const SkeletonBox(width: double.infinity, height: 74, radius: 16),
                 const SizedBox(height: 12),
-                SkeletonBox(width: double.infinity, height: 74, radius: 16),
+                const SkeletonBox(width: double.infinity, height: 74, radius: 16),
                 const SizedBox(height: 26),
-                SkeletonBox(width: 120, height: 12),
+                const SkeletonBox(width: 120, height: 12),
                 const SizedBox(height: 16),
                 for (var i = 0; i < 4; i++) ...[
-                  SkeletonBox(width: double.infinity, height: 34),
+                  const SkeletonBox(width: double.infinity, height: 34),
                   if (i != 3) const SizedBox(height: 12),
                 ],
               ],

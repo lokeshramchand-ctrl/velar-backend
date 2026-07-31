@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../core/providers/feature_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_typography.dart';
@@ -161,22 +160,17 @@ class _LiveProgressLabel extends ConsumerWidget {
     if (jobId == null) {
       return Text('ANALYSING', style: AppTypography.meta115.copyWith(color: AppColors.amber));
     }
-    return FutureBuilder(
-      future: ref.read(jobsRepositoryProvider).get(jobId!),
-      builder: (context, snapshot) {
-        final percent = snapshot.data?.progressPercent;
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            PulsingDot(color: AppColors.amber, size: 5),
-            const SizedBox(width: 6),
-            Text(
-              percent == null ? 'ANALYSING' : 'ANALYSING · $percent%',
-              style: AppTypography.meta115.copyWith(color: AppColors.amber),
-            ),
-          ],
-        );
-      },
+    final percent = ref.watch(jobSnapshotProvider(jobId!)).valueOrNull?.progressPercent;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PulsingDot(color: AppColors.amber, size: 5),
+        const SizedBox(width: 6),
+        Text(
+          percent == null ? 'ANALYSING' : 'ANALYSING · $percent%',
+          style: AppTypography.meta115.copyWith(color: AppColors.amber),
+        ),
+      ],
     );
   }
 }

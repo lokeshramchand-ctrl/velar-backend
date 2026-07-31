@@ -67,7 +67,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                 data: (state) {
                   if (period == null) return const SizedBox.shrink();
                   if (state.transactions.isEmpty) {
-                    return EmptyState(
+                    return const EmptyState(
                       icon: Icons.search_off_rounded,
                       title: 'No transactions match these filters',
                       subtitle: 'Try clearing the search or filter chips above.',
@@ -158,7 +158,17 @@ class _StickyHeader extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final activityState = ref.watch(activityControllerProvider).valueOrNull;
+    // Narrowed to just the fields this header renders, so appending a page
+    // of transactions during infinite scroll (which changes `.transactions`
+    // but not these) doesn't rebuild the search field/filter chips.
+    final headerState = ref.watch(activityControllerProvider.select(
+      (async) => (
+        total: async.valueOrNull?.total,
+        typeFilter: async.valueOrNull?.typeFilter,
+        category: async.valueOrNull?.category,
+        sortByAmount: async.valueOrNull?.sortByAmount,
+      ),
+    ));
     return Container(
       padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 14, AppSpacing.gutter, 12),
       decoration: BoxDecoration(color: AppColors.paper.withValues(alpha: 0.92), border: Border(bottom: BorderSide(color: AppColors.hairlineLight))),
@@ -169,7 +179,7 @@ class _StickyHeader extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text('Activity', style: AppTypography.screenTitle24.copyWith(color: AppColors.onLight)),
-              Text('${activityState?.total ?? period?.transactionCount ?? 0} TXNS', style: AppTypography.microLabel11.copyWith(color: AppColors.onLightFaint)),
+              Text('${headerState.total ?? period?.transactionCount ?? 0} TXNS', style: AppTypography.microLabel11.copyWith(color: AppColors.onLightFaint)),
             ],
           ),
           const SizedBox(height: 12),
@@ -202,21 +212,21 @@ class _StickyHeader extends ConsumerWidget {
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: [
-                _FilterChip(label: 'All', selected: activityState?.typeFilter == null, onTap: () => ref.read(activityControllerProvider.notifier).setTypeFilter(null)),
+                _FilterChip(label: 'All', selected: headerState.typeFilter == null, onTap: () => ref.read(activityControllerProvider.notifier).setTypeFilter(null)),
                 const SizedBox(width: 7),
-                _FilterChip(label: 'Out', selected: activityState?.typeFilter == TransactionType.debit, onTap: () => ref.read(activityControllerProvider.notifier).setTypeFilter(TransactionType.debit)),
+                _FilterChip(label: 'Out', selected: headerState.typeFilter == TransactionType.debit, onTap: () => ref.read(activityControllerProvider.notifier).setTypeFilter(TransactionType.debit)),
                 const SizedBox(width: 7),
-                _FilterChip(label: 'In', selected: activityState?.typeFilter == TransactionType.credit, onTap: () => ref.read(activityControllerProvider.notifier).setTypeFilter(TransactionType.credit)),
+                _FilterChip(label: 'In', selected: headerState.typeFilter == TransactionType.credit, onTap: () => ref.read(activityControllerProvider.notifier).setTypeFilter(TransactionType.credit)),
                 const SizedBox(width: 7),
                 _FilterChip(
-                  label: activityState?.category ?? 'Category ▾',
-                  selected: activityState?.category != null,
+                  label: headerState.category ?? 'Category ▾',
+                  selected: headerState.category != null,
                   onTap: () => _pickCategory(context, ref),
                 ),
                 const SizedBox(width: 7),
                 _FilterChip(
                   label: '₹ ▾',
-                  selected: activityState?.sortByAmount ?? false,
+                  selected: headerState.sortByAmount ?? false,
                   onTap: () => ref.read(activityControllerProvider.notifier).toggleAmountSort(),
                 ),
               ],
@@ -255,17 +265,21 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 13),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: selected ? AppColors.onLight : AppColors.card,
-          border: Border.all(color: selected ? AppColors.onLight : AppColors.hairlineLight),
-          borderRadius: BorderRadius.circular(100),
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 13),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: selected ? AppColors.onLight : AppColors.card,
+            border: Border.all(color: selected ? AppColors.onLight : AppColors.hairlineLight),
+            borderRadius: BorderRadius.circular(100),
+          ),
+          child: Text(label, style: AppTypography.buttonLabel13.copyWith(color: selected ? AppColors.paper : AppColors.onLightMuted)),
         ),
-        child: Text(label, style: AppTypography.buttonLabel13.copyWith(color: selected ? AppColors.paper : AppColors.onLightMuted)),
       ),
     );
   }
