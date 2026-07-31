@@ -1,7 +1,6 @@
 import 'package:collection/collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
@@ -13,6 +12,7 @@ import '../../../shared/widgets/delta_chip.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/error_retry.dart';
 import '../../../shared/widgets/mini_bar_chart.dart';
+import '../../../shared/widgets/screen_back_header.dart';
 import '../../../shared/widgets/skeleton.dart';
 import '../../statements/presentation/period_providers.dart';
 import 'category_drilldown_controller.dart';
@@ -54,23 +54,7 @@ class CategoryDrilldownScreen extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        IconButton(
-                          padding: EdgeInsets.zero,
-                          icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.onDark),
-                          onPressed: () => context.pop(),
-                        ),
-                        Expanded(
-                          child: Text(
-                            period == null ? '' : formatPeriodRange(period.periodStart, period.periodEnd),
-                            textAlign: TextAlign.center,
-                            style: AppTypography.buttonLabel13.copyWith(color: AppColors.onDarkMuted),
-                          ),
-                        ),
-                        const SizedBox(width: 40),
-                      ],
-                    ),
+                    ScreenBackHeader(centerTitle: period == null ? '' : formatPeriodRange(period.periodStart, period.periodEnd)),
                     const SizedBox(height: 6),
                     Row(
                       children: [

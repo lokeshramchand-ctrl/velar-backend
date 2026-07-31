@@ -7,6 +7,7 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/app_buttons.dart';
+import '../../../shared/widgets/screen_back_header.dart';
 import 'auth_controller.dart';
 
 class RegisterScreen extends ConsumerStatefulWidget {
@@ -53,7 +54,6 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
 
     return Scaffold(
       backgroundColor: AppColors.ink900,
-      appBar: AppBar(backgroundColor: AppColors.ink900, iconTheme: IconThemeData(color: AppColors.onDark)),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.gutter),
@@ -62,6 +62,9 @@ class _RegisterScreenState extends ConsumerState<RegisterScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                const SizedBox(height: 8),
+                const ScreenBackHeader(),
+                const SizedBox(height: 12),
                 Text('Create your account', style: AppTypography.bigHeadline26.copyWith(color: AppColors.onDark)),
                 const SizedBox(height: 8),
                 Text(

@@ -4,9 +4,18 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radius.dart';
 import '../../core/theme/app_typography.dart';
+import '../../features/statements/domain/insight.dart';
 import 'app_buttons.dart';
 
 enum SignalKind { watch, good, context }
+
+extension SignalKindFromSeverity on InsightSeverity {
+  SignalKind get signalKind => switch (this) {
+        InsightSeverity.warning => SignalKind.watch,
+        InsightSeverity.positive => SignalKind.good,
+        InsightSeverity.info => SignalKind.context,
+      };
+}
 
 /// A ranked, typed insight card - the design's core "signal" primitive,
 /// used on both Overview (preview) and Signals (full list).

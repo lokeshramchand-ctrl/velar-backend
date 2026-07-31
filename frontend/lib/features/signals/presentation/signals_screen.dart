@@ -26,12 +26,6 @@ class SignalsScreen extends ConsumerStatefulWidget {
 class _SignalsScreenState extends ConsumerState<SignalsScreen> {
   _SignalFilter _filter = _SignalFilter.all;
 
-  SignalKind _kindFor(InsightSeverity severity) => switch (severity) {
-        InsightSeverity.warning => SignalKind.watch,
-        InsightSeverity.positive => SignalKind.good,
-        InsightSeverity.info => SignalKind.context,
-      };
-
   @override
   Widget build(BuildContext context) {
     final period = ref.watch(currentPeriodProvider);
@@ -145,7 +139,7 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: SignalCard(
-                          kind: _kindFor(filtered[i].severity),
+                          kind: filtered[i].severity.signalKind,
                           subtype: filtered[i].type.toUpperCase(),
                           body: filtered[i].message,
                           dark: true,

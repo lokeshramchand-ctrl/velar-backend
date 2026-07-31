@@ -11,8 +11,10 @@ import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/avatar_chip.dart';
+import '../../../shared/widgets/screen_back_header.dart';
 import '../../../shared/widgets/stat_tile.dart';
 import '../../../shared/widgets/toggle_row.dart';
+import '../../auth/domain/user.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/auth_state.dart';
 import '../../statements/domain/statement.dart';
@@ -28,11 +30,7 @@ class ProfileScreen extends ConsumerWidget {
     final themeMode = ref.watch(themeModeProvider);
 
     final user = authState is AuthAuthenticated ? authState.user : null;
-    final initials = user == null
-        ? '?'
-        : (user.fullName?.trim().isNotEmpty ?? false)
-            ? user.fullName!.trim().split(RegExp(r'\s+')).map((w) => w[0]).take(2).join().toUpperCase()
-            : user.email.substring(0, 1).toUpperCase();
+    final initials = user?.initials ?? '?';
 
     final periods = periodsAsync.valueOrNull ?? const <Statement>[];
     final completed = periods.where((p) => p.processingStatus == ProcessingStatus.completed).toList();
@@ -44,13 +42,7 @@ class ProfileScreen extends ConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 6, AppSpacing.gutter, 28),
           children: [
-            Row(
-              children: [
-                IconButton(padding: EdgeInsets.zero, icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.onDark), onPressed: () => context.pop()),
-                const SizedBox(width: 4),
-                Text('You', style: AppTypography.screenTitle24.copyWith(color: AppColors.onDark)),
-              ],
-            ),
+            ScreenBackHeader(title: 'You', titleStyle: AppTypography.screenTitle24),
             const SizedBox(height: 18),
             Row(
               children: [

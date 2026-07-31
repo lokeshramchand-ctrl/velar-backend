@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_radius.dart';
@@ -12,6 +11,7 @@ import '../../../shared/widgets/avatar_chip.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/error_retry.dart';
 import '../../../shared/widgets/regularity_strip.dart';
+import '../../../shared/widgets/screen_back_header.dart';
 import '../../statements/domain/statement_analytics.dart';
 import '../../statements/presentation/period_providers.dart';
 
@@ -42,13 +42,7 @@ class RecurringScreen extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          IconButton(padding: EdgeInsets.zero, icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.onDark), onPressed: () => context.pop()),
-                          const SizedBox(width: 4),
-                          Text('Recurring', style: AppTypography.navTitle15.copyWith(color: AppColors.onDark)),
-                        ],
-                      ),
+                      const ScreenBackHeader(title: 'Recurring'),
                       const SizedBox(height: 14),
                       Text('COMMITTED EVERY MONTH', style: AppTypography.microLabel11.copyWith(color: AppColors.onDarkFaint)),
                       const SizedBox(height: 4),

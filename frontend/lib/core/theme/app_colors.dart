@@ -36,6 +36,10 @@ abstract final class AppColors {
   static final Color sky = oklch(0.76, 0.11, 238);
   static final Color amber = oklch(0.82, 0.13, 80);
   static final Color rose = oklch(0.69, 0.15, 15);
+  /// Gradient end-stop for the Overview flow bar's outflow segment
+  /// (`linear-gradient(90deg, rose, this)` in the mock) - not a reused
+  /// token elsewhere, just this one bar.
+  static final Color roseFlowGradientEnd = oklch(0.72, 0.13, 30);
   static final Color amberTint = oklch(0.95, 0.04, 80);
   static final Color roseTint = oklch(0.95, 0.035, 15);
 
@@ -59,7 +63,11 @@ abstract final class AppColors {
   static final Color scrimHeavy = oklch(0.10, 0.01, 265, 0.72);
   static final Color scrimMedium = oklch(0.20, 0.01, 265, 0.35);
 
-  /// Category name -> brand color, per the design's observed mapping.
+  /// Category name -> brand color. The mock only illustrates Food/Travel/
+  /// Bills/Shopping/Personal Care/Income; the backend's full taxonomy (see
+  /// transaction_sheet.dart's category list) has more, so every real
+  /// category gets an explicit, non-alarming hue here - rose is reserved for
+  /// truly unrecognized/uncategorized spend, not "not in the mock".
   static Color forCategory(String category) {
     switch (category.toLowerCase()) {
       case 'food':
@@ -74,6 +82,18 @@ abstract final class AppColors {
         return violet;
       case 'income':
         return accent;
+      case 'entertainment':
+        return sky;
+      case 'friends':
+        return accentDim;
+      case 'education':
+        return violet;
+      case 'healthcare':
+        return amber;
+      case 'subscription':
+        return sky;
+      case 'utility':
+        return amber;
       default:
         return rose;
     }

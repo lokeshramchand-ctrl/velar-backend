@@ -22,6 +22,9 @@ String formatCompactCurrency(num value) {
 const _months = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 const _weekdays = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
 
+/// 1-indexed month abbreviation, e.g. `monthAbbr(6) == 'JUN'`.
+String monthAbbr(int month) => _months[month - 1];
+
 /// `Jan – Jun 2026`
 String formatPeriodRange(DateTime start, DateTime end) {
   if (start.year == end.year) {

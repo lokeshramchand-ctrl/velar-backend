@@ -19,9 +19,9 @@ import '../../../shared/widgets/period_pill.dart';
 import '../../../shared/widgets/section_header.dart';
 import '../../../shared/widgets/signal_card.dart';
 import '../../../shared/widgets/skeleton.dart';
+import '../../auth/domain/user.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/auth_state.dart';
-import '../../statements/domain/insight.dart';
 import '../../statements/domain/statement.dart';
 import '../../statements/presentation/period_providers.dart';
 import 'period_switcher_sheet.dart';
@@ -102,9 +102,7 @@ class _Header extends ConsumerWidget {
     final previousAsync = ref.watch(previousPeriodAnalyticsProvider);
     final authState = ref.watch(authControllerProvider).valueOrNull;
     final initials = switch (authState) {
-      AuthAuthenticated(:final user) => (user.fullName?.trim().isNotEmpty ?? false)
-          ? user.fullName!.trim().split(RegExp(r'\s+')).map((w) => w[0]).take(2).join().toUpperCase()
-          : user.email.substring(0, 1).toUpperCase(),
+      AuthAuthenticated(:final user) => user.initials,
       _ => '?',
     };
 
@@ -165,7 +163,11 @@ class _Header extends ConsumerWidget {
               final previous = previousAsync.valueOrNull;
               if (previous != null) {
                 final prevNet = previous.totalIncome - previous.totalSpend;
-                if (prevNet != 0) deltaPercent = (net - prevNet) / prevNet.abs() * 100;
+                // Chip communicates how outflow trended, not raw net: rose+▲
+                // means you're further in the red than last period, accent+▼
+                // means it improved - matches the mock's "▲12%" rose chip
+                // sitting next to a negative net-flow hero.
+                if (prevNet != 0) deltaPercent = (prevNet - net) / prevNet.abs() * 100;
               }
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -191,7 +193,14 @@ class _Header extends ConsumerWidget {
                       height: 8,
                       child: Row(
                         children: [
-                          Expanded(flex: analytics.totalSpend.round().clamp(1, 1 << 30), child: Container(color: AppColors.rose)),
+                          Expanded(
+                          flex: analytics.totalSpend.round().clamp(1, 1 << 30),
+                          child: Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(colors: [AppColors.rose, AppColors.roseFlowGradientEnd]),
+                            ),
+                          ),
+                        ),
                           const SizedBox(width: 3),
                           Expanded(flex: analytics.totalIncome.round().clamp(1, 1 << 30), child: Container(color: AppColors.accent)),
                         ],
@@ -284,7 +293,7 @@ class _SignalsPreview extends ConsumerWidget {
               children: [
                 for (var i = 0; i < preview.length; i++) ...[
                   SignalCard(
-                    kind: _kindFor(preview[i].severity),
+                    kind: preview[i].severity.signalKind,
                     subtype: preview[i].type.toUpperCase(),
                     body: preview[i].message,
                     dark: false,
@@ -299,12 +308,6 @@ class _SignalsPreview extends ConsumerWidget {
       ],
     );
   }
-
-  SignalKind _kindFor(InsightSeverity severity) => switch (severity) {
-        InsightSeverity.warning => SignalKind.watch,
-        InsightSeverity.positive => SignalKind.good,
-        InsightSeverity.info => SignalKind.context,
-      };
 }
 
 class _CategoryBreakdown extends ConsumerWidget {

@@ -8,6 +8,7 @@ import '../../../core/theme/app_radius.dart';
 import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../shared/widgets/app_buttons.dart';
+import '../../../shared/widgets/screen_back_header.dart';
 import 'uploading_sheet.dart';
 
 class RejectedScreen extends ConsumerWidget {
@@ -25,17 +26,10 @@ class RejectedScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Row(
-                children: [
-                  IconButton(
-                    icon: Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: AppColors.onLight),
-                    onPressed: () => context.canPop() ? context.pop() : context.go('/shell/overview'),
-                  ),
-                  Expanded(
-                    child: Text('Add statement', textAlign: TextAlign.center, style: AppTypography.buttonLabel13.copyWith(color: AppColors.onLightMuted)),
-                  ),
-                  const SizedBox(width: 40),
-                ],
+              ScreenBackHeader(
+                dark: false,
+                centerTitle: 'Add statement',
+                onBack: () => context.canPop() ? context.pop() : context.go('/shell/overview'),
               ),
               const SizedBox(height: 8),
               Container(

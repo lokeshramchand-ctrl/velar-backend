@@ -11,6 +11,7 @@ import '../../../core/theme/app_typography.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../shared/widgets/empty_state.dart';
 import '../../../shared/widgets/error_retry.dart';
+import '../../../shared/widgets/screen_back_header.dart';
 import '../../../shared/widgets/skeleton.dart';
 import '../../statements/domain/statement.dart';
 import '../../statements/presentation/period_providers.dart';
@@ -24,35 +25,43 @@ class ManagePeriodsScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: AppColors.ink900,
-      appBar: AppBar(
-        backgroundColor: AppColors.ink900,
-        iconTheme: IconThemeData(color: AppColors.onDark),
-        title: Text('Manage periods', style: AppTypography.navTitle15.copyWith(color: AppColors.onDark)),
-      ),
-      body: periodsAsync.when(
-        loading: () => ListView.separated(
-          padding: const EdgeInsets.all(AppSpacing.gutter),
-          itemCount: 4,
-          separatorBuilder: (_, _) => const SizedBox(height: 10),
-          itemBuilder: (context, index) => SkeletonBox(width: double.infinity, height: 68, radius: AppRadius.card, dark: true),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(AppSpacing.gutter, 6, AppSpacing.gutter, 0),
+              child: ScreenBackHeader(title: 'Manage periods'),
+            ),
+            Expanded(
+              child: periodsAsync.when(
+                loading: () => ListView.separated(
+                  padding: const EdgeInsets.all(AppSpacing.gutter),
+                  itemCount: 4,
+                  separatorBuilder: (_, _) => const SizedBox(height: 10),
+                  itemBuilder: (context, index) => SkeletonBox(width: double.infinity, height: 68, radius: AppRadius.card, dark: true),
+                ),
+                error: (e, _) => ErrorRetry(dark: true, message: 'Could not load periods.', onRetry: () => ref.invalidate(periodsProvider)),
+                data: (periods) {
+                  if (periods.isEmpty) {
+                    return const EmptyState(
+                      dark: true,
+                      icon: Icons.folder_open_outlined,
+                      title: 'No periods yet',
+                      subtitle: 'Statements you add will show up here.',
+                    );
+                  }
+                  return ListView.separated(
+                    padding: const EdgeInsets.all(AppSpacing.gutter),
+                    itemCount: periods.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) => _PeriodTile(period: periods[index], entranceDelayMs: index.clamp(0, 6) * 40),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
-        error: (e, _) => ErrorRetry(dark: true, message: 'Could not load periods.', onRetry: () => ref.invalidate(periodsProvider)),
-        data: (periods) {
-          if (periods.isEmpty) {
-            return const EmptyState(
-              dark: true,
-              icon: Icons.folder_open_outlined,
-              title: 'No periods yet',
-              subtitle: 'Statements you add will show up here.',
-            );
-          }
-          return ListView.separated(
-            padding: const EdgeInsets.all(AppSpacing.gutter),
-            itemCount: periods.length,
-            separatorBuilder: (_, _) => const SizedBox(height: 10),
-            itemBuilder: (context, index) => _PeriodTile(period: periods[index], entranceDelayMs: index.clamp(0, 6) * 40),
-          );
-        },
       ),
     );
   }

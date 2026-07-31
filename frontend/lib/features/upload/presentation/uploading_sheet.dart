@@ -216,7 +216,7 @@ class _UploadingSheetBodyState extends ConsumerState<_UploadingSheetBody> {
     if (statement == null) return '';
     final start = statement.periodStart;
     final end = statement.periodEnd;
-    final period = '${_month(start.month)} ${start.day} - ${_month(end.month)} ${end.day} ${end.year}';
+    final period = '${monthAbbr(start.month)} ${start.day} - ${monthAbbr(end.month)} ${end.day} ${end.year}';
     final sent = statement.declaredSentAmount;
     final received = statement.declaredReceivedAmount;
     final parts = <String>['PERIOD $period'];
@@ -224,6 +224,4 @@ class _UploadingSheetBodyState extends ConsumerState<_UploadingSheetBody> {
     if (received != null) parts.add('RECEIVED ₹${received.toStringAsFixed(0)}');
     return parts.join(' · ');
   }
-
-  String _month(int m) => const ['', 'JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][m];
 }
