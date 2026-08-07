@@ -70,32 +70,41 @@ class AnalysingScreen extends ConsumerWidget {
                         Text('RUNNING IN BACKGROUND', style: AppTypography.microLabel11.copyWith(color: AppColors.onDarkFaint)),
                       ],
                     ),
-                    const SizedBox(height: 28),
-                    Center(
-                      child: ProgressRing(
-                        percent: progress,
-                        centerLabel: RichText(
-                          text: TextSpan(
-                            children: [
-                              TextSpan(text: '${progress.round()}', style: AppTypography.heroAmount34.copyWith(color: AppColors.onDark)),
-                              TextSpan(text: '%', style: AppTypography.amountMedium20.copyWith(color: AppColors.onDark)),
-                            ],
-                          ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const SizedBox(height: 28),
+                            Center(
+                              child: ProgressRing(
+                                percent: progress,
+                                centerLabel: RichText(
+                                  text: TextSpan(
+                                    children: [
+                                      TextSpan(text: '${progress.round()}', style: AppTypography.heroAmount34.copyWith(color: AppColors.onDark)),
+                                      TextSpan(text: '%', style: AppTypography.amountMedium20.copyWith(color: AppColors.onDark)),
+                                    ],
+                                  ),
+                                ),
+                                centerSubLabel: job.stage?.toUpperCase(),
+                              ),
+                            ),
+                            const SizedBox(height: 28),
+                            Text('Finding your patterns', textAlign: TextAlign.center, style: AppTypography.bigHeadline22.copyWith(color: AppColors.onDark)),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Profiling merchant behaviour - how often you pay them, and how much is normal.',
+                              textAlign: TextAlign.center,
+                              style: AppTypography.footnote15.copyWith(color: AppColors.onDarkMuted),
+                            ),
+                            const SizedBox(height: 26),
+                            for (var i = 0; i < _stageLabels.length; i++) _StageRow(label: _stageLabels[i], state: i < activeIndex ? _StageState.done : i == activeIndex ? _StageState.active : _StageState.pending),
+                          ],
                         ),
-                        centerSubLabel: job.stage?.toUpperCase(),
                       ),
                     ),
-                    const SizedBox(height: 28),
-                    Text('Finding your patterns', textAlign: TextAlign.center, style: AppTypography.bigHeadline22.copyWith(color: AppColors.onDark)),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Profiling merchant behaviour - how often you pay them, and how much is normal.',
-                      textAlign: TextAlign.center,
-                      style: AppTypography.footnote15.copyWith(color: AppColors.onDarkMuted),
-                    ),
-                    const SizedBox(height: 26),
-                    for (var i = 0; i < _stageLabels.length; i++) _StageRow(label: _stageLabels[i], state: i < activeIndex ? _StageState.done : i == activeIndex ? _StageState.active : _StageState.pending),
-                    const Spacer(),
+                    const SizedBox(height: 14),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
                       decoration: BoxDecoration(color: AppColors.ink850, border: Border.all(color: AppColors.hairlineDark), borderRadius: BorderRadius.circular(14)),

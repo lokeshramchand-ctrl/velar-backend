@@ -28,7 +28,7 @@ class AppShell extends StatelessWidget {
           Positioned(
             left: 22,
             right: 22,
-            bottom: 12,
+            bottom: 12 + MediaQuery.of(context).padding.bottom,
             child: Center(
               child: FloatingBottomNav(
                 tabs: _tabs,

@@ -33,6 +33,11 @@ class VelarApp extends ConsumerWidget {
       darkTheme: AppTheme.dark,
       themeMode: themeMode,
       routerConfig: router,
+      builder: (context, child) => MediaQuery.withClampedTextScaling(
+        minScaleFactor: 0.85,
+        maxScaleFactor: 1.25,
+        child: child!,
+      ),
     );
   }
 }

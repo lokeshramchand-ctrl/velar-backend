@@ -36,7 +36,7 @@ class _SignalsScreenState extends ConsumerState<SignalsScreen> {
       backgroundColor: AppColors.ink900,
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 6, AppSpacing.gutter, 28),
+          padding: EdgeInsets.fromLTRB(AppSpacing.gutter, 6, AppSpacing.gutter, AppSpacing.navClearance + MediaQuery.of(context).padding.bottom),
           children: [
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,

@@ -30,34 +30,39 @@ class VelarSheetChrome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
+    final maxHeight = MediaQuery.of(context).size.height * 0.9;
     return SafeArea(
       top: false,
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 14, AppSpacing.gutter, AppSpacing.lg),
-        decoration: BoxDecoration(
-          color: dark ? AppColors.ink850 : AppColors.card,
-          border: Border(
-            top: BorderSide(color: dark ? AppColors.hairlineDark : AppColors.hairlineLight),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxHeight),
+        child: Container(
+          padding: EdgeInsets.fromLTRB(AppSpacing.gutter, 14, AppSpacing.gutter, AppSpacing.lg + viewInsetsBottom),
+          decoration: BoxDecoration(
+            color: dark ? AppColors.ink850 : AppColors.card,
+            border: Border(
+              top: BorderSide(color: dark ? AppColors.hairlineDark : AppColors.hairlineLight),
+            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
           ),
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.sheet)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 38,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 14),
-                decoration: BoxDecoration(
-                  color: dark ? AppColors.hairlineDark : AppColors.hairlineLight,
-                  borderRadius: BorderRadius.circular(2),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 14),
+                  decoration: BoxDecoration(
+                    color: dark ? AppColors.hairlineDark : AppColors.hairlineLight,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            child,
-          ],
+              Flexible(child: SingleChildScrollView(child: child)),
+            ],
+          ),
         ),
       ),
     );

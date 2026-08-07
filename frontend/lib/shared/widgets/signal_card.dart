@@ -72,9 +72,13 @@ class SignalCard extends StatelessWidget {
               const SizedBox(width: 8),
               Text(label, style: AppTypography.microLabelTracked105.copyWith(color: ink)),
               const Spacer(),
-              Text(
-                subtype,
-                style: AppTypography.microLabel11.copyWith(color: dark ? AppColors.onDarkFaint : AppColors.onLightFaint),
+              Flexible(
+                child: Text(
+                  subtype,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTypography.microLabel11.copyWith(color: dark ? AppColors.onDarkFaint : AppColors.onLightFaint),
+                ),
               ),
             ],
           ),

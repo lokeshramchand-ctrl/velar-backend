@@ -52,7 +52,7 @@ class ScreenBackHeader extends StatelessWidget {
               style: (titleStyle ?? AppTypography.buttonLabel13).copyWith(color: mutedColor),
             ),
           ),
-          const SizedBox(width: 40),
+          const SizedBox(width: 48),
         ],
       );
     }

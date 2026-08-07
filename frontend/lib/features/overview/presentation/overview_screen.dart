@@ -72,7 +72,7 @@ class _OverviewScreenState extends ConsumerState<OverviewScreen> {
                 children: [
                   _Header(period: current),
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 24, AppSpacing.gutter, 108),
+                    padding: EdgeInsets.fromLTRB(AppSpacing.gutter, 24, AppSpacing.gutter, AppSpacing.navClearance + MediaQuery.of(context).padding.bottom),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -462,7 +462,7 @@ class _OverviewSkeleton extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 24, AppSpacing.gutter, 108),
+            padding: EdgeInsets.fromLTRB(AppSpacing.gutter, 24, AppSpacing.gutter, AppSpacing.navClearance + MediaQuery.of(context).padding.bottom),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [

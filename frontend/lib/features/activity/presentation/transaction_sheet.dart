@@ -97,9 +97,13 @@ class _TransactionSheetBodyState extends ConsumerState<_TransactionSheetBody> {
                 ],
               ),
             ),
-            Text(
-              '${txn.transactionType == TransactionType.debit ? '−' : '+'}${formatCurrency(txn.amount.abs())}',
-              style: AppTypography.amountSmall22.copyWith(color: AppColors.onLight),
+            Flexible(
+              child: Text(
+                '${txn.transactionType == TransactionType.debit ? '−' : '+'}${formatCurrency(txn.amount.abs())}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: AppTypography.amountSmall22.copyWith(color: AppColors.onLight),
+              ),
             ),
           ],
         ),
