@@ -5,6 +5,10 @@
          but only for the dev tooling's own VM service connection - that
          doesn't cover release/profile builds. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Android 13+ requires this at runtime too (requested via
+         LocalNotificationsService.requestPermission) before any notification
+         posted with flutter_local_notifications will actually show. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="Velar"
         android:name="${applicationName}"

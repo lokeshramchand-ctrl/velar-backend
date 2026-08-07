@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/notifications/local_notifications_service.dart';
 import '../../../core/providers/feature_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -12,11 +13,16 @@ import '../../../shared/widgets/pulsing_dot.dart';
 import '../../statements/domain/job.dart';
 import '../../statements/presentation/period_providers.dart';
 
-class AnalysingScreen extends ConsumerWidget {
+class AnalysingScreen extends ConsumerStatefulWidget {
   const AnalysingScreen({super.key, required this.jobId});
 
   final String jobId;
 
+  @override
+  ConsumerState<AnalysingScreen> createState() => _AnalysingScreenState();
+}
+
+class _AnalysingScreenState extends ConsumerState<AnalysingScreen> {
   static const _stageLabels = [
     'Reading your statement',
     'Naming merchants',
@@ -25,9 +31,33 @@ class AnalysingScreen extends ConsumerWidget {
     'Writing your signals',
   ];
 
+  bool _notifyRequested = false;
+  bool _notifiedDone = false;
+
+  Future<void> _requestNotify() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final granted = await LocalNotificationsService.instance.requestPermission();
+    if (!mounted) return;
+    if (granted) {
+      setState(() => _notifyRequested = true);
+      messenger.showSnackBar(SnackBar(content: const Text("We'll notify you when this finishes."), backgroundColor: AppColors.ink700));
+    } else {
+      messenger.showSnackBar(SnackBar(content: const Text('Notifications are turned off for Velar in system settings.'), backgroundColor: AppColors.rose));
+    }
+  }
+
+  void _notifyIfRequested({required bool failed}) {
+    if (!_notifyRequested || _notifiedDone) return;
+    _notifiedDone = true;
+    LocalNotificationsService.instance.showJobDone(
+      title: failed ? 'Statement processing failed' : 'Your statement is ready',
+      body: failed ? "We couldn't finish analysing your statement." : "We've found your top merchant and biggest signal.",
+    );
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final jobAsync = ref.watch(_jobPollProvider(jobId));
+  Widget build(BuildContext context) {
+    final jobAsync = ref.watch(_jobPollProvider(widget.jobId));
 
     return Scaffold(
       backgroundColor: AppColors.ink900,
@@ -48,10 +78,12 @@ class AnalysingScreen extends ConsumerWidget {
               error: (error, _) => _ErrorBody(message: error.toString()),
               data: (job) {
                 if (job.status == JobStatus.failed) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _notifyIfRequested(failed: true));
                   return _ErrorBody(message: job.errorMessage ?? "This statement couldn't be processed.");
                 }
                 if (job.status == JobStatus.completed) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _notifyIfRequested(failed: false);
                     ref.read(selectedPeriodIdProvider.notifier).state = job.resourceId;
                     ref.invalidate(periodsProvider);
                     if (context.mounted) context.go('/shell/overview');
@@ -115,10 +147,10 @@ class AnalysingScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 14),
                     SecondaryPillButton(
-                      label: "Notify me when it's done",
+                      label: _notifyRequested ? "We'll notify you" : "Notify me when it's done",
                       foreground: AppColors.onDark,
                       borderColor: AppColors.hairlineDark,
-                      onPressed: () {},
+                      onPressed: _notifyRequested ? null : _requestNotify,
                     ),
                   ],
                 );

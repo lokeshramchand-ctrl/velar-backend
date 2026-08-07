@@ -108,7 +108,7 @@ class _Header extends ConsumerWidget {
 
     return Container(
       color: AppColors.ink900,
-      padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 6, AppSpacing.gutter, 26),
+      padding: EdgeInsets.fromLTRB(AppSpacing.gutter, MediaQuery.of(context).padding.top + 6, AppSpacing.gutter, 26),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -439,7 +439,7 @@ class _OverviewSkeleton extends StatelessWidget {
         children: [
           Container(
             color: AppColors.ink900,
-            padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 6, AppSpacing.gutter, 26),
+            padding: EdgeInsets.fromLTRB(AppSpacing.gutter, MediaQuery.of(context).padding.top + 6, AppSpacing.gutter, 26),
             child: const Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
