@@ -6,7 +6,10 @@
 abstract final class AppConfig {
   static const String apiBaseUrl = String.fromEnvironment(
     'VELAR_API_BASE_URL',
-    defaultValue: 'https://velar.deploy.lokeshrc.me/',
+    // Deployed host (velar.deploy.lokeshrc.me) is running an older backend
+    // build missing /users/me, /statements, and /jobs - point at local until
+    // it's redeployed with the current code.
+    defaultValue: 'http://localhost:9850/',
   );
 
   static const String apiKey = String.fromEnvironment(
@@ -14,4 +17,10 @@ abstract final class AppConfig {
     defaultValue:
         'velar_test_key_123', // or remove if you don't want a fallback
   );
+
+  /// Pre-fills the login form with a seeded local test account
+  /// (test@velar.dev) so sign-in during development is one tap. Debug-only:
+  /// kDebugMode is compiled out of release builds, so this never ships.
+  static const String devEmail = 'test@velar.dev';
+  static const String devPassword = 'TestPass123!';
 }
