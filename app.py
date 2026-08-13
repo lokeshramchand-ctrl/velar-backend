@@ -23,7 +23,7 @@ from feedback.api_router import router as feedback_router
 from milvus.insert_vectors import vector_store
 
 # Routers
-from routers import analytics, auth, jobs, memory, pipelines, rag, statements, users, v1
+from routers import analytics, app_updates, auth, jobs, memory, pipelines, rag, statements, users, v1
 from routers.observability import router as observability_router
 
 # Logging
@@ -110,6 +110,14 @@ app.include_router(feedback_router, dependencies=[Depends(validate_api_key)])
 app.include_router(pipelines.router, dependencies=[Depends(validate_api_key), Depends(validate_admin_key)])
 app.include_router(statements.router, dependencies=[Depends(validate_api_key)])
 app.include_router(jobs.router, dependencies=[Depends(validate_api_key)])
+# routers/app_updates.py: GET routes need only VELAR_API_KEY (read-only
+# version metadata + the APK bytes); POST /app/releases layers
+# validate_admin_key on top of that at the route level (see the router
+# itself) since publishing a build is what actually reaches every installed
+# device - same posture as pipelines.router above, applied per-route instead
+# of per-router because most of this router's endpoints are meant to be
+# reachable by the app itself, unlike pipelines.router's.
+app.include_router(app_updates.router, dependencies=[Depends(validate_api_key)])
 
 
 # --- Health / Liveness / Readiness ---
