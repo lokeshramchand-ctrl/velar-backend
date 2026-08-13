@@ -135,6 +135,16 @@ class ProfileScreen extends ConsumerWidget {
                 }),
               ],
             ),
+            const SizedBox(height: 22),
+            const _SectionLabel('LEGAL'),
+            const SizedBox(height: 10),
+            _Card(
+              children: [
+                _NavRow(title: 'Privacy Policy', trailing: '›', onTap: () => context.push('/profile/privacy')),
+                Divider(height: 1, color: AppColors.hairlineDark),
+                _NavRow(title: 'Terms of Service', trailing: '›', onTap: () => context.push('/profile/terms')),
+              ],
+            ),
             const SizedBox(height: 26),
             OutlinedButton(
               onPressed: () async {
