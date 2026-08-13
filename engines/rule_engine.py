@@ -43,9 +43,14 @@ class RuleEngine:
                     "confidence": 0.95  # High confidence for deterministic rules
                 }
 
-        # Fallback if no rule matches
+        # Fallback if no rule matches. Surface the statement's own printed
+        # counterparty text instead of a generic placeholder - the category
+        # genuinely is unknown, but the vendor name isn't, and we already
+        # have it. Mirrors how the credit side ("Received from X") handles
+        # this in statements/statement_service.py._build_transactions.
+        fallback_merchant = text.strip() or "Unknown"
         return {
-            "merchant": "Unknown",
+            "merchant": fallback_merchant,
             "category": "Uncategorized",
             "confidence": 0.0
         }
