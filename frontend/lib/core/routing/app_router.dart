@@ -9,6 +9,8 @@ import '../../features/auth/presentation/auth_state.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
 import '../../features/auth/presentation/splash_screen.dart';
+import '../../features/legal/presentation/privacy_policy_screen.dart';
+import '../../features/legal/presentation/terms_of_service_screen.dart';
 import '../../features/onboarding/presentation/onboarding_screen.dart';
 import '../../features/overview/presentation/category_drilldown_screen.dart';
 import '../../features/overview/presentation/overview_screen.dart';
@@ -85,6 +87,8 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/profile', builder: (context, state) => const ProfileScreen()),
       GoRoute(path: '/profile/periods', builder: (context, state) => const ManagePeriodsScreen()),
       GoRoute(path: '/profile/analytics', builder: (context, state) => const SpendingPatternsScreen()),
+      GoRoute(path: '/profile/privacy', builder: (context, state) => const PrivacyPolicyScreen()),
+      GoRoute(path: '/profile/terms', builder: (context, state) => const TermsOfServiceScreen()),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) => AppShell(navigationShell: navigationShell),
         branches: [

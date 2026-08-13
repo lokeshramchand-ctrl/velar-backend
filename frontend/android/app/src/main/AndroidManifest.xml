@@ -52,5 +52,17 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- Required for file_picker's ACTION_OPEN_DOCUMENT call (statement
+             upload, FileType.custom / allowedExtensions: ['pdf']) to resolve
+             the system document picker under Android 11+ package-visibility
+             rules. Without this, FileUtils.kt's resolveActivity() check
+             silently returns null and the picker never launches - no
+             exception, no activity switch, tap just does nothing. Confirmed
+             by testing a release build against a real device. -->
+        <intent>
+            <action android:name="android.intent.action.OPEN_DOCUMENT"/>
+            <category android:name="android.intent.category.OPENABLE"/>
+            <data android:mimeType="*/*"/>
+        </intent>
     </queries>
 </manifest>
