@@ -37,11 +37,18 @@ class MongoDB:
         cls.refresh_tokens = cls.db.get_collection("refresh_tokens")
         cls.statements = cls.db.get_collection("statements")
         cls.jobs = cls.db.get_collection("jobs")
+        cls.app_releases = cls.db.get_collection("app_releases")
 
         # GridFS: stores the original uploaded PDF (repositories/statement_repository.py).
         # Reuses this same Mongo connection - no new infrastructure - see
         # docs/23-statements-pipeline.md for why GridFS over S3/local disk.
         cls.gridfs_bucket = AsyncIOMotorGridFSBucket(cls.db, bucket_name="statement_pdfs")
+
+        # Same reasoning for the self-hosted app updater (repositories/app_release_repository.py):
+        # stores uploaded release APKs on the same Mongo connection instead of
+        # requiring a Coolify volume/S3 bucket the backend container's own
+        # (otherwise stateless) filesystem can't durably provide across redeploys.
+        cls.app_releases_bucket = AsyncIOMotorGridFSBucket(cls.db, bucket_name="app_releases_apks")
 
         logger.info(f"MongoDB connected to {uri}/{db_name}")
 
@@ -108,6 +115,12 @@ class MongoDB:
             await cls.statements.create_index([("user_id", 1), ("processing_status", 1)], background=True)
             await cls.jobs.create_index("user_id", background=True)
             await cls.jobs.create_index("resource_id", background=True)
+
+            # App updater (routers/app_updates.py). version_code is unique so
+            # two releases can never collide; platform+is_latest is what
+            # GET /app/latest-version actually queries on every app launch.
+            await cls.app_releases.create_index([("platform", 1), ("version_code", 1)], unique=True, background=True)
+            await cls.app_releases.create_index([("platform", 1), ("is_latest", 1)], background=True)
 
             logger.info("MongoDB indexes ensured.")
         except Exception:

@@ -12,6 +12,15 @@ class Settings(BaseSettings):
     LLM_MODEL: str
     VELAR_API_KEY: str
 
+    # Gates routers/pipelines.py (behavior profiling, embedding sync, decay
+    # sweep, clustering, graph rebuild) - deliberately separate from and
+    # never falls back to VELAR_API_KEY, which ships inside every client app
+    # binary and is trivially extractable, so it can't be trusted to gate
+    # expensive, system-wide batch jobs that aren't scoped to any one user.
+    # Unset by default: those endpoints 503 until an operator explicitly
+    # configures this for their own cron/ops use.
+    ADMIN_API_KEY: str | None = None
+
     # JWT user authentication (core/jwt_auth.py, routers/auth.py). Distinct
     # from VELAR_API_KEY above: the API key authenticates the calling
     # application, JWT_SECRET_KEY signs per-user access tokens issued after
@@ -25,13 +34,16 @@ class Settings(BaseSettings):
     ENVIRONMENT: str = "production"  # "production" | "development"
     LOG_LEVEL: str = "INFO"  # DEBUG is opt-in, never the default - DEBUG logs full DB command payloads
     # Raised from the original 1 MB (fine when every request was a JSON body)
-    # to accommodate multipart PDF statement uploads - see POST /statements/upload.
-    # MAX_STATEMENT_PDF_BYTES below is the tighter, upload-specific ceiling
-    # checked in routers/statements.py for a clearer, PDF-specific error
-    # message; this middleware-level limit is the outer backstop for every
-    # request body regardless of route.
-    MAX_REQUEST_BODY_BYTES: int = 15_000_000  # 15 MB
+    # to accommodate multipart PDF statement uploads - see POST /statements/upload -
+    # and, since routers/app_updates.py, Android release APK uploads (also
+    # admin-key gated, but the outer backstop still has to fit them).
+    # MAX_STATEMENT_PDF_BYTES/MAX_APK_UPLOAD_BYTES below are the tighter,
+    # upload-specific ceilings checked in each router for a clearer,
+    # route-specific error message; this middleware-level limit is the outer
+    # backstop for every request body regardless of route.
+    MAX_REQUEST_BODY_BYTES: int = 80_000_000  # 80 MB
     MAX_STATEMENT_PDF_BYTES: int = 10_000_000  # 10 MB
+    MAX_APK_UPLOAD_BYTES: int = 80_000_000  # 80 MB - a Flutter release APK is typically 20-50 MB
     MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = 5000
     MONGODB_CONNECT_TIMEOUT_MS: int = 5000
 

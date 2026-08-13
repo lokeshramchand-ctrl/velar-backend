@@ -1,7 +1,9 @@
+import hashlib
 import io
 import logging
 import os
 import random
+import urllib.parse
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -100,6 +102,38 @@ def test_security_valid_key_missing_jwt(client):
     response = client.post("/v1/categorize", json={"text": "swiggy"}, headers=HEADERS)
     assert response.status_code == 401
     logger.info("System correctly required a JWT in addition to the API key.")
+
+def test_pipeline_endpoints_disabled_without_admin_key(client):
+    """routers/pipelines.py (behavior profiling, embedding sync, decay
+    sweep, clustering, graph rebuild) run expensive, system-wide batch jobs
+    with no per-user scope - VELAR_API_KEY alone can't gate them, since it
+    ships inside every client app binary and is trivially extractable. With
+    ADMIN_API_KEY unset (the default), they must be unreachable - not fall
+    back to being open to anyone holding the app's API key."""
+    logger.info("Testing that pipeline endpoints are unreachable with no ADMIN_API_KEY configured.")
+    response = client.post("/v1/pipelines/decay/sweep", headers=HEADERS)
+    assert response.status_code == 503
+    logger.info("Pipeline endpoint correctly disabled (503) with no admin key configured.")
+
+def test_pipeline_endpoint_requires_correct_admin_key(client, monkeypatch):
+    logger.info("Testing pipeline endpoint access once an admin key is configured.")
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "test-admin-key-for-pipelines")
+
+    wrong_key_res = client.post(
+        "/v1/pipelines/decay/sweep", headers={**HEADERS, "X-Velar-Admin-Key": "wrong-key"}
+    )
+    assert wrong_key_res.status_code == 403
+    logger.info("Wrong admin key correctly rejected with 403.")
+
+    missing_key_res = client.post("/v1/pipelines/decay/sweep", headers=HEADERS)
+    assert missing_key_res.status_code == 403
+    logger.info("Missing admin key (API key alone) correctly rejected with 403.")
+
+    correct_key_res = client.post(
+        "/v1/pipelines/decay/sweep", headers={**HEADERS, "X-Velar-Admin-Key": "test-admin-key-for-pipelines"}
+    )
+    assert correct_key_res.status_code == 200
+    logger.info("Correct admin key accepted; pipeline endpoint ran.")
 
 def test_rate_limiter_defense(client, auth_headers):
     """Fires 55 rapid requests to trigger the 50/minute SlowAPI limit."""
@@ -581,6 +615,90 @@ def test_feedback_correction_updates_the_transaction(client, auth_user, auth_hea
     assert refetched.json()["items"][0]["category"] == corrected_category
     logger.info(f"Transaction category corrected from '{original_category}' to '{corrected_category}' and persisted.")
 
+def test_feedback_correction_propagates_to_same_merchant(client, auth_user, auth_headers, processed_statement):
+    """Correcting one transaction's category should recategorize every
+    other transaction from the same merchant too - not leave siblings
+    stuck on the old category. Matches the app's own "trains Velar's
+    merchant memory" framing (transaction_sheet.dart)."""
+    logger.info("Verifying a feedback correction propagates to every transaction from the same merchant.")
+    headers = _auth_headers_no_content_type(auth_user)
+    statement_id = processed_statement["statement_id"]
+
+    # Sample a page to find a repeated-merchant candidate, then ask the
+    # merchant-filtered endpoint for the *authoritative* full count for that
+    # merchant - the sample page alone may be truncated (page_size caps at
+    # 100, this mock statement has 184 transactions).
+    sample = client.get(f"/statements/{statement_id}/transactions?page=1&page_size=100", headers=headers).json()["items"]
+    counts: dict[str, int] = {}
+    for txn in sample:
+        if txn["merchant"]:
+            counts[txn["merchant"]] = counts.get(txn["merchant"], 0) + 1
+    candidate_merchant = max(counts, key=counts.get)
+    assert counts[candidate_merchant] >= 2, "expected at least one repeated merchant in the mock statement to test propagation"
+
+    merchant = candidate_merchant
+    siblings = client.get(
+        f"/statements/{statement_id}/transactions?merchant={urllib.parse.quote(merchant)}&page_size=100", headers=headers
+    ).json()["items"]
+    logger.info(f"Using merchant '{merchant}' with {len(siblings)} transactions.")
+
+    target = siblings[0]
+    original_category = target["category"]
+    corrected_category = "Travel" if original_category != "Travel" else "Entertainment"
+
+    feedback = client.post(
+        "/v1/feedback/",
+        json={
+            "transaction_id": target["id"],
+            "original_prediction": original_category or "Unknown",
+            "corrected_category": corrected_category,
+            "confidence": 1.0,
+        },
+        headers=auth_headers,
+    )
+    assert feedback.status_code == 200
+    assert feedback.json()["feedback_recorded"] is True
+
+    refreshed = client.get(
+        f"/statements/{statement_id}/transactions?merchant={urllib.parse.quote(merchant)}&page_size=100", headers=headers
+    ).json()["items"]
+    assert len(refreshed) == len(siblings)
+    assert all(t["category"] == corrected_category for t in refreshed)
+    logger.info(f"All {len(refreshed)} '{merchant}' transactions now show corrected category '{corrected_category}'.")
+
+def test_feedback_rejects_transaction_owned_by_another_user(client, auth_user, processed_statement):
+    """A client-supplied transaction_id must be verified as belonging to the
+    caller before feedback is recorded against it - otherwise any
+    authenticated user could reference another user's transaction_id (a
+    guessed or leaked ObjectId - Mongo ids aren't secret) and have it
+    silently accepted, no ownership check at all."""
+    logger.info("Testing that feedback referencing another user's transaction is rejected.")
+    headers = _auth_headers_no_content_type(auth_user)
+    victim_txn = client.get(
+        f"/statements/{processed_statement['statement_id']}/transactions?page=1&page_size=1", headers=headers
+    ).json()["items"][0]
+
+    other_email = f"feedback_idor_{uuid.uuid4().hex[:10]}@example.com"
+    register_res = client.post(
+        "/auth/register", json={"email": other_email, "password": "StrongPassword123!"}, headers=HEADERS
+    )
+    assert register_res.status_code == 201
+    other_token, _ = create_access_token(register_res.json()["id"])
+    other_headers = {**HEADERS, "Authorization": f"Bearer {other_token}"}
+
+    response = client.post(
+        "/v1/feedback/",
+        json={
+            "transaction_id": victim_txn["id"],
+            "original_prediction": victim_txn["category"] or "Unknown",
+            "corrected_category": "Shopping",
+            "confidence": 1.0,
+        },
+        headers=other_headers,
+    )
+    assert response.status_code == 404
+    logger.info("Feedback for another user's transaction correctly rejected with 404.")
+
 def test_statement_insights(client, auth_user, processed_statement):
     logger.info("Testing GET /statements/{id}/insights reads precomputed insights (no live LLM call).")
     response = client.get(
@@ -674,4 +792,112 @@ def test_users_me_and_patch(client, auth_user):
     patch_res = client.patch("/users/me", json={"full_name": "Test User"}, headers={**headers, "Content-Type": "application/json"})
     assert patch_res.status_code == 200
     assert patch_res.json()["full_name"] == "Test User"
+
+# =====================================================================
+# APP UPDATER (routers/app_updates.py) - self-hosted OTA release server,
+# no Shorebird/Play Store account required.
+# =====================================================================
+
+def _publish_release(client, version_code, version_name="1.0.0", apk_bytes=b"fake-apk-bytes-for-testing", filename="app.apk"):
+    files = {"apk": (filename, io.BytesIO(apk_bytes), "application/vnd.android.package-archive")}
+    data = {"version_code": str(version_code), "version_name": version_name, "release_notes": "Test release"}
+    return client.post(
+        "/app/releases", files=files, data=data, headers={**HEADERS, "X-Velar-Admin-Key": "test-admin-key-for-app-updates"}
+    )
+
+def test_app_updates_latest_version_404_before_any_release(client, monkeypatch):
+    """A fresh platform with nothing published yet must 404, not 200 with a
+    null/empty body - the client's version-compare logic should never have
+    to special-case "no release exists" as a valid response shape."""
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "test-admin-key-for-app-updates")
+    logger.info("Testing GET /app/latest-version 404s when nothing has been published for a platform.")
+    # ios has no releases in this test run (only android ones get published below).
+    response = client.get("/app/latest-version", params={"platform": "ios"}, headers=HEADERS)
+    assert response.status_code in (404, 422)  # 422 if "ios" isn't a modeled AppPlatform value
+
+def test_app_updates_publish_requires_admin_key(client):
+    logger.info("Testing POST /app/releases rejects a plain API key with no admin key.")
+    files = {"apk": ("app.apk", io.BytesIO(b"bytes"), "application/vnd.android.package-archive")}
+    data = {"version_code": "1", "version_name": "1.0.0"}
+    response = client.post("/app/releases", files=files, data=data, headers=HEADERS)
+    assert response.status_code == 403
+    logger.info("Publish correctly rejected without a valid admin key.")
+
+def test_app_updates_publish_and_fetch_latest(client, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "test-admin-key-for-app-updates")
+    version_code = random.randint(100_000, 999_999)
+    apk_bytes = b"fake-apk-bytes-" + str(version_code).encode()
+    logger.info(f"Publishing release version_code={version_code} and verifying it's returned as latest.")
+
+    publish_res = _publish_release(client, version_code, version_name="9.9.9", apk_bytes=apk_bytes)
+    assert publish_res.status_code == 200, publish_res.text
+    published = publish_res.json()
+    assert published["version_code"] == version_code
+    assert published["version_name"] == "9.9.9"
+    assert published["sha256"] == hashlib.sha256(apk_bytes).hexdigest()
+    assert published["size_bytes"] == len(apk_bytes)
+    assert published["download_url"] == f"/app/releases/{version_code}/download"
+
+    latest_res = client.get("/app/latest-version", headers=HEADERS)
+    assert latest_res.status_code == 200
+    assert latest_res.json()["version_code"] == version_code
+    logger.info("Published release correctly surfaced as latest.")
+
+def test_app_updates_publish_supersedes_previous_latest(client, monkeypatch):
+    """Publishing a second release must flip is_latest so /latest-version
+    always answers with exactly one release, never the union of two."""
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "test-admin-key-for-app-updates")
+    first_version = random.randint(100_000, 999_999)
+    second_version = first_version + 1
+    logger.info(f"Publishing {first_version} then {second_version} to verify latest flips forward.")
+
+    assert _publish_release(client, first_version).status_code == 200
+    assert _publish_release(client, second_version).status_code == 200
+
+    latest_res = client.get("/app/latest-version", headers=HEADERS)
+    assert latest_res.status_code == 200
+    assert latest_res.json()["version_code"] == second_version
+    logger.info("Latest release correctly moved to the newer version_code.")
+
+def test_app_updates_rejects_duplicate_version_code(client, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "test-admin-key-for-app-updates")
+    version_code = random.randint(100_000, 999_999)
+    logger.info(f"Testing re-publishing version_code={version_code} is rejected.")
+
+    assert _publish_release(client, version_code).status_code == 200
+    dup_res = _publish_release(client, version_code)
+    assert dup_res.status_code == 409
+    logger.info("Duplicate version_code correctly rejected with 409.")
+
+def test_app_updates_rejects_non_apk_file(client, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "test-admin-key-for-app-updates")
+    logger.info("Testing POST /app/releases rejects a non-.apk filename.")
+    response = _publish_release(client, random.randint(100_000, 999_999), filename="app.txt")
+    assert response.status_code == 400
+    logger.info("Non-APK upload correctly rejected.")
+
+def test_app_updates_download_roundtrip(client, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "test-admin-key-for-app-updates")
+    version_code = random.randint(100_000, 999_999)
+    apk_bytes = os.urandom(4096)  # exercises real byte-for-byte GridFS streaming, not just a short literal
+    logger.info(f"Testing the full publish -> download round-trip for version_code={version_code}.")
+
+    publish_res = _publish_release(client, version_code, apk_bytes=apk_bytes)
+    assert publish_res.status_code == 200, publish_res.text
+
+    download_res = client.get(f"/app/releases/{version_code}/download", headers=HEADERS)
+    assert download_res.status_code == 200
+    assert download_res.content == apk_bytes
+    assert download_res.headers["content-type"] == "application/vnd.android.package-archive"
+    assert download_res.headers["x-sha256"] == hashlib.sha256(apk_bytes).hexdigest()
+    logger.info("Downloaded APK bytes match the uploaded bytes exactly.")
+
+def test_app_updates_download_requires_api_key(client, monkeypatch):
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "test-admin-key-for-app-updates")
+    version_code = random.randint(100_000, 999_999)
+    assert _publish_release(client, version_code).status_code == 200
+
+    logger.info("Testing GET /app/releases/{version_code}/download rejects a missing API key.")
+    response = client.get(f"/app/releases/{version_code}/download")
+    assert response.status_code in (401, 403)
     logger.info("Profile updated and reflected correctly.")

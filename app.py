@@ -14,7 +14,7 @@ from core.error_handlers import register_exception_handlers
 from core.middleware import BodySizeLimitMiddleware, RequestIDMiddleware, SecurityHeadersMiddleware
 from core.ollama_client import get_ollama_host
 from core.rate_limiter import setup_rate_limiting
-from core.security import validate_api_key
+from core.security import validate_admin_key, validate_api_key
 from database.milvus import vector_db
 
 # Databases
@@ -23,7 +23,7 @@ from feedback.api_router import router as feedback_router
 from milvus.insert_vectors import vector_store
 
 # Routers
-from routers import analytics, auth, jobs, memory, pipelines, rag, statements, users, v1
+from routers import analytics, app_updates, auth, jobs, memory, pipelines, rag, statements, users, v1
 from routers.observability import router as observability_router
 
 # Logging
@@ -93,6 +93,12 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 # feedback/api_router.py). The API key authenticates the calling
 # application; JWT authenticates the end user within it. A JWT alone, without
 # the API key, is rejected here before a handler ever runs.
+#
+# pipelines.router is the one exception: its handlers take no per-user JWT
+# at all (they're system-wide batch jobs, not scoped to a user), so
+# VELAR_API_KEY alone - shipped inside every client app binary - isn't a
+# safe gate for them. It gets an additional validate_admin_key dependency
+# on top, gated by a separate operator-only secret (see core/security.py).
 app.include_router(auth.router, dependencies=[Depends(validate_api_key)])
 app.include_router(users.router, dependencies=[Depends(validate_api_key)])
 app.include_router(v1.router, dependencies=[Depends(validate_api_key)])
@@ -101,9 +107,17 @@ app.include_router(analytics.router, dependencies=[Depends(validate_api_key)])
 app.include_router(rag.router, dependencies=[Depends(validate_api_key)])
 app.include_router(observability_router, dependencies=[Depends(validate_api_key)])
 app.include_router(feedback_router, dependencies=[Depends(validate_api_key)])
-app.include_router(pipelines.router, dependencies=[Depends(validate_api_key)])
+app.include_router(pipelines.router, dependencies=[Depends(validate_api_key), Depends(validate_admin_key)])
 app.include_router(statements.router, dependencies=[Depends(validate_api_key)])
 app.include_router(jobs.router, dependencies=[Depends(validate_api_key)])
+# routers/app_updates.py: GET routes need only VELAR_API_KEY (read-only
+# version metadata + the APK bytes); POST /app/releases layers
+# validate_admin_key on top of that at the route level (see the router
+# itself) since publishing a build is what actually reaches every installed
+# device - same posture as pipelines.router above, applied per-route instead
+# of per-router because most of this router's endpoints are meant to be
+# reachable by the app itself, unlike pipelines.router's.
+app.include_router(app_updates.router, dependencies=[Depends(validate_api_key)])
 
 
 # --- Health / Liveness / Readiness ---

@@ -409,6 +409,39 @@ class TransactionListResponse(BaseModel):
     total_pages: int
 
 
+class AppPlatform(str, Enum):
+    ANDROID = "android"
+
+
+class AppRelease(CoreModel):
+    """A single uploaded build (routers/app_updates.py, self-hosted app
+    updater - no Play Store, no Shorebird account). The APK bytes live in
+    GridFS (database/mongo.py's app_releases_bucket); this is metadata only."""
+    id: str | None = Field(alias="_id", default=None)
+    platform: AppPlatform = AppPlatform.ANDROID
+    version_code: int  # Android versionCode - the only value the client compares to decide "is this newer"
+    version_name: str  # Android versionName - human-facing, e.g. "1.2.0"
+    release_notes: str = ""
+    min_supported_version_code: int | None = None  # below this, the client should treat the update as mandatory
+    gridfs_file_id: str
+    sha256: str
+    size_bytes: int
+    is_latest: bool = True
+    uploaded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class AppReleaseResponse(BaseModel):
+    platform: AppPlatform
+    version_code: int
+    version_name: str
+    release_notes: str
+    min_supported_version_code: int | None
+    sha256: str
+    size_bytes: int
+    uploaded_at: datetime
+    download_url: str
+
+
 class StatementAnalyticsResponse(StatementAnalytics):
     statement_id: str
 
