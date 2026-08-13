@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: ["main", "master", "frontend"]
   pull_request:
-    branches: ["main", "master"]
+    branches: ["main", "master", "frontend"]
 
 # Cancel superseded runs on the same branch/PR to save CI minutes.
 concurrency:
@@ -98,6 +98,26 @@ jobs:
         run: pip install -r requirements.txt
       - name: Run test suite
         run: pytest test_api.py -v
+
+  # --- Frontend (Flutter) ---
+  frontend:
+    name: Frontend (flutter analyze + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.44.1"
+          channel: "stable"
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Analyze
+        run: flutter analyze
+      - name: Run test suite
+        run: flutter test
 
   # --- Docker build + image hardening/vulnerability checks ---
   docker:
