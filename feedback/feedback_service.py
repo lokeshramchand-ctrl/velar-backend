@@ -6,6 +6,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 
 from database.mongo import db
+from repositories.transaction_repository import transaction_repo
 
 logger = logging.getLogger(__name__)
 
@@ -44,8 +45,12 @@ class FeedbackService:
 
         logger.info(f"Feedback logged for TX {transaction_id}. Correction made: {is_correction}")
 
-        # 2. If the model was wrong, queue it for the next retraining batch
+        # 2. If the model was wrong, apply the correction to the transaction
+        # itself (so the app actually shows what the user just told us -
+        # "Wrong category" corrected nothing user-visible before this) and
+        # queue it for the next retraining batch.
         if is_correction:
+            await transaction_repo.update_category(transaction_id, user_id, corrected_category)
             await self._queue_for_retraining(transaction_id, corrected_category, original_prediction)
 
         return feedback_doc

@@ -549,6 +549,38 @@ def test_statement_analytics(client, auth_user, processed_statement):
     assert len(data["category_breakdown"]) > 0
     logger.info(f"Analytics: total_spend={data['total_spend']}, total_income={data['total_income']}")
 
+def test_feedback_correction_updates_the_transaction(client, auth_user, auth_headers, processed_statement):
+    """A "Wrong category" correction must change what the transaction itself
+    shows, not just queue the correction for some future retraining run -
+    otherwise the app's Edit-category UI records feedback but the user never
+    sees any actual effect on the transaction they corrected."""
+    logger.info("Verifying a feedback correction is applied to the transaction it targets.")
+    headers = _auth_headers_no_content_type(auth_user)
+    statement_id = processed_statement["statement_id"]
+
+    txns = client.get(f"/statements/{statement_id}/transactions?page=1&page_size=1", headers=headers)
+    assert txns.status_code == 200
+    transaction = txns.json()["items"][0]
+    original_category = transaction["category"]
+    corrected_category = "Travel" if original_category != "Travel" else "Entertainment"
+
+    feedback = client.post(
+        "/v1/feedback/",
+        json={
+            "transaction_id": transaction["id"],
+            "original_prediction": original_category or "Unknown",
+            "corrected_category": corrected_category,
+            "confidence": 1.0,
+        },
+        headers=auth_headers,
+    )
+    assert feedback.status_code == 200
+    assert feedback.json()["feedback_recorded"] is True
+
+    refetched = client.get(f"/statements/{statement_id}/transactions?page=1&page_size=1", headers=headers)
+    assert refetched.json()["items"][0]["category"] == corrected_category
+    logger.info(f"Transaction category corrected from '{original_category}' to '{corrected_category}' and persisted.")
+
 def test_statement_insights(client, auth_user, processed_statement):
     logger.info("Testing GET /statements/{id}/insights reads precomputed insights (no live LLM call).")
     response = client.get(
