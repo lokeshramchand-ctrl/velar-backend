@@ -150,6 +150,18 @@ def test_categorize_valid_payload(client, auth_headers):
     assert "confidence" in data
     logger.info(f"Categorization Success -> Merchant: {data['merchant']}, Cat: {data['category']}")
 
+def test_categorize_unmatched_falls_back_to_raw_text(client, auth_headers):
+    """No rule matches this text - the merchant should be the statement's
+    own printed text, not the placeholder string "Unknown" (which would
+    discard a real, if unrecognized, vendor name)."""
+    text = "paid 250 to make my choice"
+    response = client.post("/v1/categorize", json={"text": text}, headers=auth_headers)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["merchant"] == text
+    assert data["category"] == "Uncategorized"
+    assert data["confidence"] == 0.0
+
 # =====================================================================
 # PHASE 4: MEMORY ENGINE (STATE PROMOTION)
 # =====================================================================
