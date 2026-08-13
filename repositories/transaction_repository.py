@@ -3,6 +3,8 @@ import re
 from datetime import datetime
 from typing import Any
 
+from bson import ObjectId
+from bson.errors import InvalidId
 from pymongo import UpdateOne
 
 from database.mongo import db
@@ -91,6 +93,23 @@ class TransactionRepository:
     async def delete_for_statement(self, statement_id: str) -> int:
         result = await db.transactions.delete_many({"statement_id": statement_id})
         return result.deleted_count
+
+    async def update_category(self, transaction_id: str, user_id: str, category: str) -> bool:
+        """Applies a human-verified category correction directly to the
+        transaction, so it's reflected immediately - see
+        feedback/feedback_service.py, which otherwise only fed corrections
+        into the retraining queue for some future model update while the
+        transaction itself kept showing the old category forever. Scoped to
+        user_id so a transaction_id alone can't edit another user's data."""
+        try:
+            oid = ObjectId(transaction_id)
+        except (InvalidId, TypeError):
+            return False
+        result = await db.transactions.update_one(
+            {"_id": oid, "user_id": user_id},
+            {"$set": {"category": category}},
+        )
+        return result.modified_count > 0
 
 
 transaction_repo = TransactionRepository()
