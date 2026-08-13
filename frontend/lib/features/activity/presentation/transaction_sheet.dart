@@ -10,6 +10,7 @@ import '../../../shared/widgets/avatar_chip.dart';
 import '../../../shared/widgets/bottom_sheet_scaffold.dart';
 import '../../statements/domain/transaction.dart';
 import '../../statements/presentation/period_providers.dart';
+import 'activity_controller.dart';
 
 const _kTransactionCategories = [
   'Food', 'Travel', 'Entertainment', 'Bills', 'Friends', 'Education', 'Healthcare', 'Subscription', 'Shopping', 'Utility', 'Income', 'Unknown',
@@ -30,6 +31,7 @@ class _TransactionSheetBody extends ConsumerStatefulWidget {
 class _TransactionSheetBodyState extends ConsumerState<_TransactionSheetBody> {
   bool _submitting = false;
   String? _feedbackResult;
+  late String? _displayedCategory = widget.transaction.category;
 
   Future<void> _submitFeedback(String correctedCategory) async {
     setState(() => _submitting = true);
@@ -40,6 +42,15 @@ class _TransactionSheetBodyState extends ConsumerState<_TransactionSheetBody> {
             correctedCategory: correctedCategory,
             confidence: 1.0,
           );
+      if (recorded) {
+        // The backend already updated the transaction (and every sibling
+        // transaction from the same merchant) - reflect that here instead
+        // of the stale category the sheet was opened with, and invalidate
+        // the Activity list so it re-fetches instead of showing stale data
+        // until the next manual pull-to-refresh.
+        _displayedCategory = correctedCategory;
+        ref.invalidate(activityControllerProvider);
+      }
       setState(() => _feedbackResult = recorded ? 'Thanks - your correction trains Velar\'s merchant memory.' : 'Thanks for confirming.');
     } catch (_) {
       setState(() => _feedbackResult = "Couldn't record your feedback. Please try again.");
@@ -72,10 +83,11 @@ class _TransactionSheetBodyState extends ConsumerState<_TransactionSheetBody> {
   @override
   Widget build(BuildContext context) {
     final txn = widget.transaction;
+    final category = _displayedCategory;
     final period = ref.watch(currentPeriodProvider);
     final isUnusual = txn.status != TransactionStatus.success;
     final avatarLetter = (txn.merchant?.isNotEmpty ?? false) ? txn.merchant![0].toUpperCase() : '?';
-    final color = AppColors.forCategory(txn.category ?? '');
+    final color = AppColors.forCategory(category ?? '');
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -134,11 +146,11 @@ class _TransactionSheetBodyState extends ConsumerState<_TransactionSheetBody> {
             children: [
               _detailRow(
                 'Category',
-                txn.category ?? 'Uncategorized',
+                category ?? 'Uncategorized',
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(txn.category ?? 'Uncategorized', style: AppTypography.rowLabel14.copyWith(color: AppColors.onLight)),
+                    Text(category ?? 'Uncategorized', style: AppTypography.rowLabel14.copyWith(color: AppColors.onLight)),
                     const SizedBox(width: 8),
                     GestureDetector(
                       onTap: _submitting ? null : _pickWrongCategory,
@@ -171,7 +183,7 @@ class _TransactionSheetBodyState extends ConsumerState<_TransactionSheetBody> {
               ),
               const SizedBox(height: 10),
               Text(
-                'Categorized as "${txn.category ?? 'Uncategorized'}" from ${txn.merchant ?? 'this merchant'}\'s known transaction history. Grounded in your own statements - never guessed.',
+                'Categorized as "${category ?? 'Uncategorized'}" from ${txn.merchant ?? 'this merchant'}\'s known transaction history. Grounded in your own statements - never guessed.',
                 style: AppTypography.footnote12.copyWith(color: AppColors.onDarkMuted, height: 1.55),
               ),
             ],
@@ -185,7 +197,7 @@ class _TransactionSheetBodyState extends ConsumerState<_TransactionSheetBody> {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: _submitting ? null : () => _submitFeedback(txn.category ?? 'Unknown'),
+                  onPressed: _submitting ? null : () => _submitFeedback(category ?? 'Unknown'),
                   style: OutlinedButton.styleFrom(side: BorderSide(color: AppColors.hairlineLight), padding: const EdgeInsets.symmetric(vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(100))),
                   child: Text('Looks right', style: AppTypography.buttonLabel12.copyWith(color: AppColors.onLight)),
                 ),
