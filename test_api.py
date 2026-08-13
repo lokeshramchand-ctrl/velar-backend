@@ -2,6 +2,7 @@ import io
 import logging
 import os
 import random
+import urllib.parse
 import uuid
 from datetime import UTC, datetime, timedelta
 
@@ -580,6 +581,57 @@ def test_feedback_correction_updates_the_transaction(client, auth_user, auth_hea
     refetched = client.get(f"/statements/{statement_id}/transactions?page=1&page_size=1", headers=headers)
     assert refetched.json()["items"][0]["category"] == corrected_category
     logger.info(f"Transaction category corrected from '{original_category}' to '{corrected_category}' and persisted.")
+
+def test_feedback_correction_propagates_to_same_merchant(client, auth_user, auth_headers, processed_statement):
+    """Correcting one transaction's category should recategorize every
+    other transaction from the same merchant too - not leave siblings
+    stuck on the old category. Matches the app's own "trains Velar's
+    merchant memory" framing (transaction_sheet.dart)."""
+    logger.info("Verifying a feedback correction propagates to every transaction from the same merchant.")
+    headers = _auth_headers_no_content_type(auth_user)
+    statement_id = processed_statement["statement_id"]
+
+    # Sample a page to find a repeated-merchant candidate, then ask the
+    # merchant-filtered endpoint for the *authoritative* full count for that
+    # merchant - the sample page alone may be truncated (page_size caps at
+    # 100, this mock statement has 184 transactions).
+    sample = client.get(f"/statements/{statement_id}/transactions?page=1&page_size=100", headers=headers).json()["items"]
+    counts: dict[str, int] = {}
+    for txn in sample:
+        if txn["merchant"]:
+            counts[txn["merchant"]] = counts.get(txn["merchant"], 0) + 1
+    candidate_merchant = max(counts, key=counts.get)
+    assert counts[candidate_merchant] >= 2, "expected at least one repeated merchant in the mock statement to test propagation"
+
+    merchant = candidate_merchant
+    siblings = client.get(
+        f"/statements/{statement_id}/transactions?merchant={urllib.parse.quote(merchant)}&page_size=100", headers=headers
+    ).json()["items"]
+    logger.info(f"Using merchant '{merchant}' with {len(siblings)} transactions.")
+
+    target = siblings[0]
+    original_category = target["category"]
+    corrected_category = "Travel" if original_category != "Travel" else "Entertainment"
+
+    feedback = client.post(
+        "/v1/feedback/",
+        json={
+            "transaction_id": target["id"],
+            "original_prediction": original_category or "Unknown",
+            "corrected_category": corrected_category,
+            "confidence": 1.0,
+        },
+        headers=auth_headers,
+    )
+    assert feedback.status_code == 200
+    assert feedback.json()["feedback_recorded"] is True
+
+    refreshed = client.get(
+        f"/statements/{statement_id}/transactions?merchant={urllib.parse.quote(merchant)}&page_size=100", headers=headers
+    ).json()["items"]
+    assert len(refreshed) == len(siblings)
+    assert all(t["category"] == corrected_category for t in refreshed)
+    logger.info(f"All {len(refreshed)} '{merchant}' transactions now show corrected category '{corrected_category}'.")
 
 def test_statement_insights(client, auth_user, processed_statement):
     logger.info("Testing GET /statements/{id}/insights reads precomputed insights (no live LLM call).")

@@ -111,5 +111,18 @@ class TransactionRepository:
         )
         return result.modified_count > 0
 
+    async def update_category_for_merchant(self, user_id: str, merchant: str, category: str) -> int:
+        """Applies a category correction to every transaction this user has
+        from the same merchant, not just the one that was corrected -
+        matches the app's own "trains Velar's merchant memory" framing
+        (transaction_sheet.dart): correcting one Zomato transaction should
+        recategorize every other Zomato transaction too, not leave them
+        stuck on the old category."""
+        result = await db.transactions.update_many(
+            {"user_id": user_id, "merchant": merchant},
+            {"$set": {"category": category}},
+        )
+        return result.modified_count
+
 
 transaction_repo = TransactionRepository()
