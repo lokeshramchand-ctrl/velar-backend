@@ -102,6 +102,38 @@ def test_security_valid_key_missing_jwt(client):
     assert response.status_code == 401
     logger.info("System correctly required a JWT in addition to the API key.")
 
+def test_pipeline_endpoints_disabled_without_admin_key(client):
+    """routers/pipelines.py (behavior profiling, embedding sync, decay
+    sweep, clustering, graph rebuild) run expensive, system-wide batch jobs
+    with no per-user scope - VELAR_API_KEY alone can't gate them, since it
+    ships inside every client app binary and is trivially extractable. With
+    ADMIN_API_KEY unset (the default), they must be unreachable - not fall
+    back to being open to anyone holding the app's API key."""
+    logger.info("Testing that pipeline endpoints are unreachable with no ADMIN_API_KEY configured.")
+    response = client.post("/v1/pipelines/decay/sweep", headers=HEADERS)
+    assert response.status_code == 503
+    logger.info("Pipeline endpoint correctly disabled (503) with no admin key configured.")
+
+def test_pipeline_endpoint_requires_correct_admin_key(client, monkeypatch):
+    logger.info("Testing pipeline endpoint access once an admin key is configured.")
+    monkeypatch.setattr(settings, "ADMIN_API_KEY", "test-admin-key-for-pipelines")
+
+    wrong_key_res = client.post(
+        "/v1/pipelines/decay/sweep", headers={**HEADERS, "X-Velar-Admin-Key": "wrong-key"}
+    )
+    assert wrong_key_res.status_code == 403
+    logger.info("Wrong admin key correctly rejected with 403.")
+
+    missing_key_res = client.post("/v1/pipelines/decay/sweep", headers=HEADERS)
+    assert missing_key_res.status_code == 403
+    logger.info("Missing admin key (API key alone) correctly rejected with 403.")
+
+    correct_key_res = client.post(
+        "/v1/pipelines/decay/sweep", headers={**HEADERS, "X-Velar-Admin-Key": "test-admin-key-for-pipelines"}
+    )
+    assert correct_key_res.status_code == 200
+    logger.info("Correct admin key accepted; pipeline endpoint ran.")
+
 def test_rate_limiter_defense(client, auth_headers):
     """Fires 55 rapid requests to trigger the 50/minute SlowAPI limit."""
     logger.info("Firing rapid requests to test Rate Limiter defense...")
@@ -632,6 +664,39 @@ def test_feedback_correction_propagates_to_same_merchant(client, auth_user, auth
     assert len(refreshed) == len(siblings)
     assert all(t["category"] == corrected_category for t in refreshed)
     logger.info(f"All {len(refreshed)} '{merchant}' transactions now show corrected category '{corrected_category}'.")
+
+def test_feedback_rejects_transaction_owned_by_another_user(client, auth_user, processed_statement):
+    """A client-supplied transaction_id must be verified as belonging to the
+    caller before feedback is recorded against it - otherwise any
+    authenticated user could reference another user's transaction_id (a
+    guessed or leaked ObjectId - Mongo ids aren't secret) and have it
+    silently accepted, no ownership check at all."""
+    logger.info("Testing that feedback referencing another user's transaction is rejected.")
+    headers = _auth_headers_no_content_type(auth_user)
+    victim_txn = client.get(
+        f"/statements/{processed_statement['statement_id']}/transactions?page=1&page_size=1", headers=headers
+    ).json()["items"][0]
+
+    other_email = f"feedback_idor_{uuid.uuid4().hex[:10]}@example.com"
+    register_res = client.post(
+        "/auth/register", json={"email": other_email, "password": "StrongPassword123!"}, headers=HEADERS
+    )
+    assert register_res.status_code == 201
+    other_token, _ = create_access_token(register_res.json()["id"])
+    other_headers = {**HEADERS, "Authorization": f"Bearer {other_token}"}
+
+    response = client.post(
+        "/v1/feedback/",
+        json={
+            "transaction_id": victim_txn["id"],
+            "original_prediction": victim_txn["category"] or "Unknown",
+            "corrected_category": "Shopping",
+            "confidence": 1.0,
+        },
+        headers=other_headers,
+    )
+    assert response.status_code == 404
+    logger.info("Feedback for another user's transaction correctly rejected with 404.")
 
 def test_statement_insights(client, auth_user, processed_statement):
     logger.info("Testing GET /statements/{id}/insights reads precomputed insights (no live LLM call).")

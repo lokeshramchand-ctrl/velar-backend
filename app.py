@@ -14,7 +14,7 @@ from core.error_handlers import register_exception_handlers
 from core.middleware import BodySizeLimitMiddleware, RequestIDMiddleware, SecurityHeadersMiddleware
 from core.ollama_client import get_ollama_host
 from core.rate_limiter import setup_rate_limiting
-from core.security import validate_api_key
+from core.security import validate_admin_key, validate_api_key
 from database.milvus import vector_db
 
 # Databases
@@ -93,6 +93,12 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 # feedback/api_router.py). The API key authenticates the calling
 # application; JWT authenticates the end user within it. A JWT alone, without
 # the API key, is rejected here before a handler ever runs.
+#
+# pipelines.router is the one exception: its handlers take no per-user JWT
+# at all (they're system-wide batch jobs, not scoped to a user), so
+# VELAR_API_KEY alone - shipped inside every client app binary - isn't a
+# safe gate for them. It gets an additional validate_admin_key dependency
+# on top, gated by a separate operator-only secret (see core/security.py).
 app.include_router(auth.router, dependencies=[Depends(validate_api_key)])
 app.include_router(users.router, dependencies=[Depends(validate_api_key)])
 app.include_router(v1.router, dependencies=[Depends(validate_api_key)])
@@ -101,7 +107,7 @@ app.include_router(analytics.router, dependencies=[Depends(validate_api_key)])
 app.include_router(rag.router, dependencies=[Depends(validate_api_key)])
 app.include_router(observability_router, dependencies=[Depends(validate_api_key)])
 app.include_router(feedback_router, dependencies=[Depends(validate_api_key)])
-app.include_router(pipelines.router, dependencies=[Depends(validate_api_key)])
+app.include_router(pipelines.router, dependencies=[Depends(validate_api_key), Depends(validate_admin_key)])
 app.include_router(statements.router, dependencies=[Depends(validate_api_key)])
 app.include_router(jobs.router, dependencies=[Depends(validate_api_key)])
 

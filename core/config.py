@@ -12,6 +12,15 @@ class Settings(BaseSettings):
     LLM_MODEL: str
     VELAR_API_KEY: str
 
+    # Gates routers/pipelines.py (behavior profiling, embedding sync, decay
+    # sweep, clustering, graph rebuild) - deliberately separate from and
+    # never falls back to VELAR_API_KEY, which ships inside every client app
+    # binary and is trivially extractable, so it can't be trusted to gate
+    # expensive, system-wide batch jobs that aren't scoped to any one user.
+    # Unset by default: those endpoints 503 until an operator explicitly
+    # configures this for their own cron/ops use.
+    ADMIN_API_KEY: str | None = None
+
     # JWT user authentication (core/jwt_auth.py, routers/auth.py). Distinct
     # from VELAR_API_KEY above: the API key authenticates the calling
     # application, JWT_SECRET_KEY signs per-user access tokens issued after

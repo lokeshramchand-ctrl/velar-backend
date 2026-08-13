@@ -90,6 +90,22 @@ class TransactionRepository:
             items.append(Transaction(**doc))
         return items, total
 
+    async def get_by_id(self, transaction_id: str, user_id: str) -> Transaction | None:
+        """Used to verify ownership before acting on a client-supplied
+        transaction_id (see feedback/api_router.py) - returns None for both
+        "doesn't exist" and "belongs to someone else", the same
+        can't-distinguish-existence posture used elsewhere (routers/statements.py,
+        routers/jobs.py)."""
+        try:
+            oid = ObjectId(transaction_id)
+        except (InvalidId, TypeError):
+            return None
+        doc = await db.transactions.find_one({"_id": oid, "user_id": user_id})
+        if doc is None:
+            return None
+        doc["_id"] = str(doc["_id"])
+        return Transaction(**doc)
+
     async def delete_for_statement(self, statement_id: str) -> int:
         result = await db.transactions.delete_many({"statement_id": statement_id})
         return result.deleted_count

@@ -13,6 +13,9 @@ logger = logging.getLogger(__name__)
 API_KEY_NAME = "X-Velar-API-Key"
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
+ADMIN_KEY_NAME = "X-Velar-Admin-Key"
+admin_key_header = APIKeyHeader(name=ADMIN_KEY_NAME, auto_error=False)
+
 # Argon2id (the library's default variant) with its built-in, OWASP-aligned
 # default cost parameters - the current recommended password hashing
 # algorithm, ahead of bcrypt/PBKDF2. Salting and constant-time verification
@@ -52,3 +55,27 @@ async def validate_api_key(api_key_header: str = Security(api_key_header)) -> st
         )
 
     return "developer_id_789" # Returns the authenticated entity
+
+
+async def validate_admin_key(admin_key_header: str = Security(admin_key_header)) -> str:
+    """Gates routers/pipelines.py's operational/batch endpoints. These run
+    expensive, system-wide jobs (full clustering passes, embedding syncs)
+    with no per-user scope, so VELAR_API_KEY - shipped inside every client
+    app binary and trivially extractable from the compiled app - isn't a
+    safe gate for them on its own. Unset ADMIN_API_KEY means these
+    endpoints are unreachable (503) rather than falling back to anything
+    permissive."""
+    if not settings.ADMIN_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin operations are not enabled on this deployment.",
+        )
+
+    if not admin_key_header or not secrets.compare_digest(admin_key_header, settings.ADMIN_API_KEY):
+        logger.warning("Rejected invalid or missing admin key attempt.")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid or missing admin key",
+        )
+
+    return "admin"
