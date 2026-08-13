@@ -6,10 +6,14 @@
 abstract final class AppConfig {
   static const String apiBaseUrl = String.fromEnvironment(
     'VELAR_API_BASE_URL',
-    // Deployed host (velar.deploy.lokeshrc.me) is running an older backend
-    // build missing /users/me, /statements, and /jobs - point at local until
-    // it's redeployed with the current code.
-    defaultValue: 'http://localhost:9850/',
+    // Verified 2026-08-13: the deployed host only serves /auth/*, /memory/*,
+    // and health/metrics - /users/me, /statements, /jobs, /analytics/* etc.
+    // all 404 there (stale build; redeploy is a Coolify action outside this
+    // repo, see docs/14-deployment-operations.md). Login/register work
+    // end-to-end; every screen past login does not. Override with
+    // --dart-define=VELAR_API_BASE_URL=http://localhost:9850/ to develop
+    // against a backend that has the full route set.
+    defaultValue: 'https://velar.deploy.lokeshrc.me/',
   );
 
   static const String apiKey = String.fromEnvironment(
