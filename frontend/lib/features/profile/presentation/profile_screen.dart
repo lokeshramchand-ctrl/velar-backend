@@ -18,6 +18,7 @@ import '../../auth/domain/user.dart';
 import '../../auth/presentation/auth_controller.dart';
 import '../../auth/presentation/auth_state.dart';
 import '../../statements/domain/statement.dart';
+import '../../statements/domain/transaction.dart';
 import '../../statements/presentation/period_providers.dart';
 
 class ProfileScreen extends ConsumerWidget {
@@ -82,6 +83,8 @@ class ProfileScreen extends ConsumerWidget {
             _Card(
               children: [
                 _NavRow(title: 'Manage periods', trailing: '${periods.length} ›', onTap: () => context.push('/profile/periods')),
+                Divider(height: 1, color: AppColors.hairlineDark),
+                _NavRow(title: 'Spending patterns', trailing: '›', onTap: () => context.push('/profile/analytics')),
                 Divider(height: 1, color: AppColors.hairlineDark),
                 Consumer(builder: (context, ref, _) {
                   final keep = ref.watch(keepOriginalPdfsProvider);
@@ -186,15 +189,33 @@ class ProfileScreen extends ConsumerWidget {
       messenger.showSnackBar(SnackBar(content: const Text('Add a statement first to export its transactions.'), backgroundColor: AppColors.ink700));
       return;
     }
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => Center(child: CircularProgressIndicator(color: AppColors.accent)),
+    );
     try {
       final repo = ref.read(statementsRepositoryProvider);
-      final result = await repo.transactions(period.id, page: 1, pageSize: 100, sortBy: 'timestamp', sortOrder: 'desc');
+      final transactions = <Transaction>[];
+      var page = 1;
+      // Safety cap, not a truncation limit: 500 pages * 100/page = 50k
+      // transactions, far beyond any real statement - guards against an
+      // infinite loop if the backend ever reports a bad total_pages.
+      const maxPages = 500;
+      while (page <= maxPages) {
+        final result = await repo.transactions(period.id, page: page, pageSize: 100, sortBy: 'timestamp', sortOrder: 'desc');
+        transactions.addAll(result.items);
+        if (page >= result.totalPages) break;
+        page++;
+      }
       final buffer = StringBuffer('date,merchant,category,amount,type,status\n');
-      for (final txn in result.items) {
+      for (final txn in transactions) {
         buffer.writeln('${txn.timestamp.toIso8601String()},${txn.merchant ?? ''},${txn.category ?? ''},${txn.amount},${txn.transactionType.name},${txn.status.name}');
       }
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
       await Share.share(buffer.toString(), subject: 'Velar export - ${period.originalFilename}');
     } on ApiException catch (e) {
+      if (context.mounted) Navigator.of(context, rootNavigator: true).pop();
       messenger.showSnackBar(SnackBar(content: Text(e.message), backgroundColor: AppColors.rose));
     }
   }

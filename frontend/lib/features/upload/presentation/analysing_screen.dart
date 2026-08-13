@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/notifications/local_notifications_service.dart';
 import '../../../core/providers/feature_providers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_spacing.dart';
@@ -12,11 +13,16 @@ import '../../../shared/widgets/pulsing_dot.dart';
 import '../../statements/domain/job.dart';
 import '../../statements/presentation/period_providers.dart';
 
-class AnalysingScreen extends ConsumerWidget {
+class AnalysingScreen extends ConsumerStatefulWidget {
   const AnalysingScreen({super.key, required this.jobId});
 
   final String jobId;
 
+  @override
+  ConsumerState<AnalysingScreen> createState() => _AnalysingScreenState();
+}
+
+class _AnalysingScreenState extends ConsumerState<AnalysingScreen> {
   static const _stageLabels = [
     'Reading your statement',
     'Naming merchants',
@@ -25,9 +31,33 @@ class AnalysingScreen extends ConsumerWidget {
     'Writing your signals',
   ];
 
+  bool _notifyRequested = false;
+  bool _notifiedDone = false;
+
+  Future<void> _requestNotify() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final granted = await LocalNotificationsService.instance.requestPermission();
+    if (!mounted) return;
+    if (granted) {
+      setState(() => _notifyRequested = true);
+      messenger.showSnackBar(SnackBar(content: const Text("We'll notify you when this finishes."), backgroundColor: AppColors.ink700));
+    } else {
+      messenger.showSnackBar(SnackBar(content: const Text('Notifications are turned off for Velar in system settings.'), backgroundColor: AppColors.rose));
+    }
+  }
+
+  void _notifyIfRequested({required bool failed}) {
+    if (!_notifyRequested || _notifiedDone) return;
+    _notifiedDone = true;
+    LocalNotificationsService.instance.showJobDone(
+      title: failed ? 'Statement processing failed' : 'Your statement is ready',
+      body: failed ? "We couldn't finish analysing your statement." : "We've found your top merchant and biggest signal.",
+    );
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final jobAsync = ref.watch(_jobPollProvider(jobId));
+  Widget build(BuildContext context) {
+    final jobAsync = ref.watch(_jobPollProvider(widget.jobId));
 
     return Scaffold(
       backgroundColor: AppColors.ink900,
@@ -48,10 +78,12 @@ class AnalysingScreen extends ConsumerWidget {
               error: (error, _) => _ErrorBody(message: error.toString()),
               data: (job) {
                 if (job.status == JobStatus.failed) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) => _notifyIfRequested(failed: true));
                   return _ErrorBody(message: job.errorMessage ?? "This statement couldn't be processed.");
                 }
                 if (job.status == JobStatus.completed) {
                   WidgetsBinding.instance.addPostFrameCallback((_) {
+                    _notifyIfRequested(failed: false);
                     ref.read(selectedPeriodIdProvider.notifier).state = job.resourceId;
                     ref.invalidate(periodsProvider);
                     if (context.mounted) context.go('/shell/overview');
@@ -70,32 +102,41 @@ class AnalysingScreen extends ConsumerWidget {
                         Text('RUNNING IN BACKGROUND', style: AppTypography.microLabel11.copyWith(color: AppColors.onDarkFaint)),
                       ],
                     ),
-                    const SizedBox(height: 28),
-                    Center(
-                      child: ProgressRing(
-                        percent: progress,
-                        centerLabel: RichText(
-                          text: TextSpan(
-                            children: [
-                              TextSpan(text: '${progress.round()}', style: AppTypography.heroAmount34.copyWith(color: AppColors.onDark)),
-                              TextSpan(text: '%', style: AppTypography.amountMedium20.copyWith(color: AppColors.onDark)),
-                            ],
-                          ),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            const SizedBox(height: 28),
+                            Center(
+                              child: ProgressRing(
+                                percent: progress,
+                                centerLabel: RichText(
+                                  text: TextSpan(
+                                    children: [
+                                      TextSpan(text: '${progress.round()}', style: AppTypography.heroAmount34.copyWith(color: AppColors.onDark)),
+                                      TextSpan(text: '%', style: AppTypography.amountMedium20.copyWith(color: AppColors.onDark)),
+                                    ],
+                                  ),
+                                ),
+                                centerSubLabel: job.stage?.toUpperCase(),
+                              ),
+                            ),
+                            const SizedBox(height: 28),
+                            Text('Finding your patterns', textAlign: TextAlign.center, style: AppTypography.bigHeadline22.copyWith(color: AppColors.onDark)),
+                            const SizedBox(height: 10),
+                            Text(
+                              'Profiling merchant behaviour - how often you pay them, and how much is normal.',
+                              textAlign: TextAlign.center,
+                              style: AppTypography.footnote15.copyWith(color: AppColors.onDarkMuted),
+                            ),
+                            const SizedBox(height: 26),
+                            for (var i = 0; i < _stageLabels.length; i++) _StageRow(label: _stageLabels[i], state: i < activeIndex ? _StageState.done : i == activeIndex ? _StageState.active : _StageState.pending),
+                          ],
                         ),
-                        centerSubLabel: job.stage?.toUpperCase(),
                       ),
                     ),
-                    const SizedBox(height: 28),
-                    Text('Finding your patterns', textAlign: TextAlign.center, style: AppTypography.bigHeadline22.copyWith(color: AppColors.onDark)),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Profiling merchant behaviour - how often you pay them, and how much is normal.',
-                      textAlign: TextAlign.center,
-                      style: AppTypography.footnote15.copyWith(color: AppColors.onDarkMuted),
-                    ),
-                    const SizedBox(height: 26),
-                    for (var i = 0; i < _stageLabels.length; i++) _StageRow(label: _stageLabels[i], state: i < activeIndex ? _StageState.done : i == activeIndex ? _StageState.active : _StageState.pending),
-                    const Spacer(),
+                    const SizedBox(height: 14),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 13),
                       decoration: BoxDecoration(color: AppColors.ink850, border: Border.all(color: AppColors.hairlineDark), borderRadius: BorderRadius.circular(14)),
@@ -106,10 +147,10 @@ class AnalysingScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 14),
                     SecondaryPillButton(
-                      label: "Notify me when it's done",
+                      label: _notifyRequested ? "We'll notify you" : "Notify me when it's done",
                       foreground: AppColors.onDark,
                       borderColor: AppColors.hairlineDark,
-                      onPressed: () {},
+                      onPressed: _notifyRequested ? null : _requestNotify,
                     ),
                   ],
                 );

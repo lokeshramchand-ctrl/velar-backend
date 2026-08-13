@@ -37,9 +37,16 @@ class CategoryBarRow extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(name, style: AppTypography.rowLabel14.copyWith(color: AppColors.onLight)),
+                Expanded(
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTypography.rowLabel14.copyWith(color: AppColors.onLight),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Text(amountLabel, style: AppTypography.amountMedium14.copyWith(color: AppColors.onLight)),
               ],
             ),

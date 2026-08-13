@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../features/activity/presentation/activity_screen.dart';
+import '../../features/analytics/presentation/spending_patterns_screen.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_state.dart';
 import '../../features/auth/presentation/login_screen.dart';
@@ -83,6 +84,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/recurring', builder: (context, state) => const RecurringScreen()),
       GoRoute(path: '/profile', builder: (context, state) => const ProfileScreen()),
       GoRoute(path: '/profile/periods', builder: (context, state) => const ManagePeriodsScreen()),
+      GoRoute(path: '/profile/analytics', builder: (context, state) => const SpendingPatternsScreen()),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) => AppShell(navigationShell: navigationShell),
         branches: [

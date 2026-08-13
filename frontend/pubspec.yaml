@@ -68,10 +68,15 @@ dependencies:
   shimmer: ^3.0.0
   url_launcher: ^6.3.1
   share_plus: ^10.1.4
+  flutter_local_notifications: ^18.0.1
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+
+  # Lets tests swap FlutterSecureStoragePlatform.instance for an in-memory
+  # fake instead of hitting a real platform channel (see test/support/).
+  flutter_secure_storage_platform_interface: ^1.1.2
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

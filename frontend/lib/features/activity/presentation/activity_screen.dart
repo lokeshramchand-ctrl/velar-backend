@@ -59,7 +59,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
             Expanded(
               child: activityAsync.when(
                 loading: () => ListView.builder(
-                  padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 8, AppSpacing.gutter, 120),
+                  padding: EdgeInsets.fromLTRB(AppSpacing.gutter, 8, AppSpacing.gutter, AppSpacing.navClearance + MediaQuery.of(context).padding.bottom),
                   itemCount: 8,
                   itemBuilder: (context, index) => const SkeletonListRow(),
                 ),
@@ -79,7 +79,7 @@ class _ActivityScreenState extends ConsumerState<ActivityScreen> {
                     onRefresh: () => ref.refresh(activityControllerProvider.future),
                     child: ListView.builder(
                       controller: _scrollController,
-                      padding: const EdgeInsets.fromLTRB(AppSpacing.gutter, 8, AppSpacing.gutter, 120),
+                      padding: EdgeInsets.fromLTRB(AppSpacing.gutter, 8, AppSpacing.gutter, AppSpacing.navClearance + MediaQuery.of(context).padding.bottom),
                       itemCount: groups.length + (state.isLoadingMore ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index >= groups.length) return const SkeletonListRow();
