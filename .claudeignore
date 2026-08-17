@@ -1,0 +1,38 @@
+# Generated/build artifacts and caches — never useful as source context
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+.venv-linux/
+env/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+*.log
+*.sqlite3
+
+# Frontend (Flutter) generated/build output — large, non-source, not part of
+# the Python backend this repo's tooling (ruff, pytest) targets
+frontend/build/
+frontend/.dart_tool/
+frontend/.idea/
+frontend/android/.gradle/
+frontend/android/.kotlin/
+frontend/android/app/build/
+frontend/ios/Pods/
+frontend/ios/.symlinks/
+
+# Version control and editor metadata
+.git/
+.vscode/
+
+# Secrets — never read into context
+.env
+*.pem
+*.key
+
+# Large/binary sample data — not useful as text context
+mock/*.pdf
+assets/*.png
