@@ -1,7 +1,7 @@
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-exclude = [".venv", ".venv-linux", "__pycache__"]
+exclude = [".venv", ".venv-linux", "__pycache__", "frontend"]
 
 [tool.ruff.lint]
 select = [
