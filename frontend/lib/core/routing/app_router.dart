@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import '../../features/activity/presentation/activity_screen.dart';
 import '../../features/analytics/presentation/spending_patterns_screen.dart';
 import '../../features/auth/presentation/auth_controller.dart';
