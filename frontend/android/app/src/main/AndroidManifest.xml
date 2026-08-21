@@ -9,6 +9,13 @@
          LocalNotificationsService.requestPermission) before any notification
          posted with flutter_local_notifications will actually show. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- Self-hosted app updater (features/app_update) - required to launch
+         the system "install unknown app" flow for a downloaded release APK
+         via open_filex. Android 8+ still prompts the user for a one-time,
+         per-app "allow installs from this source" toggle the first time this
+         fires - this permission is what makes that prompt reachable at all,
+         not a bypass of it. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application
         android:label="Velar"
         android:name="${applicationName}"
