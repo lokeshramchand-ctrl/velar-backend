@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from enum import Enum
 
 from database.mongo import db
+from core.dlp_redaction import dlp_redactor
 
 logger = logging.getLogger(__name__)
 
@@ -46,15 +47,18 @@ class AuditLogger:
             user_id: User associated with the event
             device_id: Device associated with the event
             ip_address: IP address of the request
-            details: Additional event details
+            details: Additional event details (PII automatically redacted)
             severity: Event severity (INFO, WARNING, CRITICAL)
         """
+        # Redact sensitive data from details before storing
+        redacted_details = dlp_redactor.redact_dict(details or {})
+
         audit_entry = {
             "event_type": event_type,
             "user_id": user_id,
             "device_id": device_id,
             "ip_address": ip_address,
-            "details": details or {},
+            "details": redacted_details,
             "severity": severity,
             "timestamp": datetime.now(UTC),
         }

@@ -17,6 +17,9 @@ class DeviceSession(BaseModel):
     last_login: datetime = Field(default_factory=lambda: datetime.now(UTC))
     is_trusted: bool = Field(default=False, description="Trusted devices skip MFA")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    attestation_verified: bool = Field(default=False, description="Device has passed attestation")
+    attestation_type: str | None = Field(default=None, description="'play_integrity' or 'app_attest'")
+    attestation_at: datetime | None = Field(default=None, description="Last successful attestation timestamp")
 
 
 class User(CoreModel):
@@ -75,6 +78,13 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=1, max_length=128)
+    device_id: str | None = Field(default=None, description="Unique device identifier for device tracking")
+    device_name: str | None = Field(default=None, description="User-friendly device name")
+    user_agent: str | None = Field(default=None, description="Device user agent string")
+    ip_address: str | None = Field(default=None, description="Client IP address")
+    attestation_token: str | None = Field(default=None, description="Play Integrity / App Attest token")
+    attestation_type: str | None = Field(default=None, description="'play_integrity' or 'app_attest'")
+    attestation_nonce: str | None = Field(default=None, description="Nonce used for attestation")
 
     @field_validator("email")
     @classmethod

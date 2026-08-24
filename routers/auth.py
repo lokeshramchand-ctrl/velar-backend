@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Request, status
 from pymongo.errors import DuplicateKeyError
 
+from core.config import settings
+from core.device_attestation import device_attestation_verifier
 from core.jwt_auth import create_access_token, generate_refresh_token
 from core.rate_limiter import limiter
 from core.security import hash_password, verify_password
@@ -25,13 +27,24 @@ def _hash_refresh_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode()).hexdigest()
 
 
-async def _issue_token_pair(user_id: str) -> TokenResponse:
-    access_token, expires_in = create_access_token(user_id)
+async def _issue_token_pair(
+    user_id: str,
+    device_id: str | None = None,
+    device_name: str | None = None,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+    scopes: list[str] | None = None,
+) -> TokenResponse:
+    access_token, expires_in = create_access_token(user_id, scopes=scopes or [])
     refresh_token, refresh_expires_at = generate_refresh_token()
     await refresh_token_repo.store(
         user_id=user_id,
         token_hash=_hash_refresh_token(refresh_token),
         expires_at=refresh_expires_at,
+        device_id=device_id,
+        device_name=device_name or "Unknown Device",
+        user_agent=user_agent,
+        ip_address=ip_address,
     )
     return TokenResponse(access_token=access_token, refresh_token=refresh_token, expires_in=expires_in)
 
@@ -77,7 +90,70 @@ async def login(request: Request, payload: LoginRequest):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
 
-    return await _issue_token_pair(user.id)
+    # Verify device attestation if provided/required
+    attestation_result = None
+    if payload.attestation_token and payload.attestation_type:
+        if payload.attestation_type == "play_integrity":
+            attestation_result = await device_attestation_verifier.verify_play_integrity(
+                payload.attestation_token,
+                payload.attestation_nonce or ""
+            )
+        elif payload.attestation_type == "app_attest":
+            attestation_result = await device_attestation_verifier.verify_app_attest(
+                payload.attestation_token,
+                payload.attestation_nonce or ""
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown attestation type: {payload.attestation_type}"
+            )
+
+        if not attestation_result.is_valid and settings.DEVICE_ATTESTATION_REQUIRED:
+            logger.warning(f"Device attestation failed: {attestation_result.error}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Device attestation failed"
+            )
+
+    # Track device on login if provided
+    from models.schemas import DeviceSession
+    if payload.device_id:
+        # Update or create device session
+        device = next((d for d in user.devices if d.device_id == payload.device_id), None)
+        if device:
+            device.last_login = datetime.now(UTC)
+            device.user_agent = payload.user_agent or device.user_agent
+            device.ip_address = payload.ip_address or device.ip_address
+        else:
+            device = DeviceSession(
+                device_id=payload.device_id,
+                device_name=payload.device_name or "Unknown Device",
+                user_agent=payload.user_agent,
+                ip_address=payload.ip_address,
+                last_login=datetime.now(UTC),
+            )
+            user.devices.append(device)
+
+        # Store attestation result if verification completed
+        if attestation_result:
+            device.attestation_verified = attestation_result.is_valid
+            device.attestation_type = attestation_result.attestation_type
+            if attestation_result.is_valid:
+                device.attestation_at = attestation_result.timestamp
+
+        await user_repo.update_user(user.id, {"devices": [d.model_dump() for d in user.devices]})
+
+    # Issue token pair with basic "user" scope
+    # (additional scopes can be granted through separate authorization flows)
+    return await _issue_token_pair(
+        user.id,
+        device_id=payload.device_id,
+        device_name=payload.device_name or "Unknown Device",
+        user_agent=payload.user_agent,
+        ip_address=payload.ip_address,
+        scopes=["user"]
+    )
 
 
 @router.post("/refresh", response_model=TokenResponse)
@@ -110,7 +186,10 @@ async def refresh(request: Request, payload: RefreshRequest):
     # Rotation: the presented token is single-use. Revoke it before issuing
     # its replacement so it can never be redeemed a second time.
     await refresh_token_repo.revoke(token_hash)
-    return await _issue_token_pair(user.id)
+
+    # Preserve scopes from the refresh token (if stored) or use default
+    # For now, always issue with "user" scope; scope escalation requires explicit flows
+    return await _issue_token_pair(user.id, scopes=["user"])
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

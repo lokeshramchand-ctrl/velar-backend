@@ -4,6 +4,7 @@ from typing import Any
 
 import httpx
 
+from core.llm_safety import llm_safety_validator, ExplanationOutput
 from core.ollama_client import LLM_MODEL, get_ollama_host
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,15 @@ RULES:
         if context_string == "NO_CONTEXT_AVAILABLE":
             return {"error": "No historical behavior found to explain this transaction."}
 
-        full_prompt = f"CONTEXT:\n{context_string}\n\nUSER QUERY: {query}\n\nOUTPUT STRICT JSON:"
+        # Sanitize inputs to prevent prompt injection
+        sanitized_query = llm_safety_validator.sanitize_prompt_input(query)
+        sanitized_context = llm_safety_validator.sanitize_context(context_string)
+
+        # Wrap user input in delimiters to prevent prompt escape
+        delimited_query = llm_safety_validator.wrap_in_delimiters(sanitized_query)
+        delimited_context = llm_safety_validator.wrap_in_delimiters(sanitized_context)
+
+        full_prompt = f"CONTEXT:\n{delimited_context}\n\nUSER QUERY: {delimited_query}\n\nOUTPUT STRICT JSON:"
 
         payload = {
             "model": LLM_MODEL,
@@ -46,8 +55,22 @@ RULES:
                 response.raise_for_status()
                 data = response.json()
 
-                # Parse the JSON string returned by the LLM
-                return json.loads(data["response"])
+                # Parse and validate the JSON string returned by the LLM
+                raw_response = data["response"]
+
+                # Validate JSON structure for safety
+                parsed = llm_safety_validator.validate_json_safety(raw_response)
+                if parsed is None:
+                    logger.error("LLM output failed safety checks")
+                    return {"error": "LLM output validation failed"}
+
+                # Validate against expected schema
+                validated = llm_safety_validator.validate_llm_output(parsed, ExplanationOutput)
+                return validated
+
+            except ValueError as e:
+                logger.error(f"LLM Output Validation Error: {e}")
+                return {"error": f"Output validation failed: {str(e)}"}
             except Exception as e:
                 logger.error(f"LLM Generation Error: {e}")
                 return {"error": "Failed to generate explanation due to internal model error."}

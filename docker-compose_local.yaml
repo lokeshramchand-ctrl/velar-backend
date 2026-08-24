@@ -106,6 +106,12 @@ services:
       milvus:
         condition: service_healthy
     restart: always
+    # Temporary filesystem for logs, cache, and temp files (local dev only;
+    # production uses read-only fs with tmpfs in docker-compose_production.yaml)
+    tmpfs:
+      - /tmp
+      - /var/tmp
+      - /run
     security_opt:
       - no-new-privileges:true
     cap_drop:
