@@ -90,13 +90,13 @@ def decode_access_token(token: str) -> dict:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
-) -> dict:
+) -> User:
     """The JWT half of this app's two-layer auth (see core/security.py for
     the API-key half). Bind this via `Depends(get_current_user)` on a
     handler parameter - not `dependencies=[...]` - wherever the resolved
     identity is actually needed, e.g. to scope a query by user id.
 
-    Returns the decoded JWT payload dict with 'sub', 'scopes', 'jti', etc.
+    Returns the persisted User for the token's subject.
     """
     if credentials is None:
         raise HTTPException(
@@ -122,7 +122,7 @@ async def get_current_user(
         # 401-vs-403 convention in core/security.py.
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
 
-    return payload
+    return user
 
 
 def require_scope(required_scopes: str | list[str]):
@@ -130,7 +130,7 @@ def require_scope(required_scopes: str | list[str]):
 
     Usage:
         @router.get("/admin/users")
-        async def admin_endpoint(payload = Depends(require_scope("admin"))):
+        async def admin_endpoint(current_user: User = Depends(require_scope("admin"))):
             ...
 
     Args:
@@ -143,17 +143,19 @@ def require_scope(required_scopes: str | list[str]):
         required_scopes = [required_scopes]
 
     async def check_scopes(
-        payload = Depends(get_current_user),
-    ) -> dict:
-        token_scopes = payload.get("scopes", [])
+        credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
+        current_user: User = Depends(get_current_user),
+    ) -> User:
+        # get_current_user (above) already rejects missing/invalid credentials,
+        # so by the time this line runs credentials is guaranteed non-None.
+        token_scopes = decode_access_token(credentials.credentials).get("scopes", [])
 
-        # Check if any required scope is present
         if not any(scope in token_scopes for scope in required_scopes):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Required scope not present. Need one of: {', '.join(required_scopes)}"
             )
 
-        return payload
+        return current_user
 
     return check_scopes

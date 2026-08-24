@@ -23,8 +23,8 @@ abstract final class AppConfig {
   );
 
   /// Pre-fills the login form with a seeded local test account
-  /// (test@velar.dev) so sign-in during development is one tap. Debug-only:
+  /// (lo@gmail.com) so sign-in during development is one tap. Debug-only:
   /// kDebugMode is compiled out of release builds, so this never ships.
-  static const String devEmail = 'test@velar.dev';
-  static const String devPassword = 'TestPass123!';
+  static const String devEmail = 'lo@gmail.com';
+  static const String devPassword = '123456789';
 }
