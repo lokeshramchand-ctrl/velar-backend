@@ -8,6 +8,17 @@ class CoreModel(BaseModel):
     model_config = ConfigDict(populate_by_name=True, arbitrary_types_allowed=True)
 
 
+class DeviceSession(BaseModel):
+    """Per-device session tracking for per-user/device authorization."""
+    device_id: str = Field(description="Unique device identifier (hashed)")
+    device_name: str = Field(description="User-friendly device name", default="Unknown Device")
+    user_agent: str | None = Field(description="Device user agent", default=None)
+    ip_address: str | None = Field(description="IP address from login", default=None)
+    last_login: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    is_trusted: bool = Field(default=False, description="Trusted devices skip MFA")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
 class User(CoreModel):
     """Persisted shape of a `users` document. `hashed_password` never leaves
     this model - API responses use `UserPublic` instead (see below)."""
@@ -16,6 +27,7 @@ class User(CoreModel):
     hashed_password: str
     full_name: str | None = None
     is_active: bool = True
+    devices: list[DeviceSession] = Field(default_factory=list, description="Tracked devices")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

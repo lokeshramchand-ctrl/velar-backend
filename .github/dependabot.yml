@@ -1,0 +1,68 @@
+version: 2
+updates:
+  # Python dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "03:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "lokeshramchand-ctrl"
+    assignees:
+      - "lokeshramchand-ctrl"
+    labels:
+      - "dependencies"
+      - "python"
+    pull-request-branch-name:
+      separator: "/"
+    commit-message:
+      prefix: "chore(deps):"
+      include: "scope"
+    rebase-strategy: "auto"
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+    ignore:
+      # Leave intentionally empty - update everything
+    # Security updates get priority
+    security-updates-only: false
+    # Allow multiple dependency updates in single PR
+    allow-multiple-dependency-updates: true
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "04:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "lokeshramchand-ctrl"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci(actions):"
+      include: "scope"
+    rebase-strategy: "auto"
+
+  # Docker images (for base images in Dockerfile)
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "05:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "lokeshramchand-ctrl"
+    labels:
+      - "dependencies"
+      - "docker"
+    commit-message:
+      prefix: "ci(docker):"
+      include: "scope"
+    rebase-strategy: "auto"

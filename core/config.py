@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # Operational settings (all have safe production-appropriate defaults)
     ENVIRONMENT: str = "production"  # "production" | "development"
     LOG_LEVEL: str = "INFO"  # DEBUG is opt-in, never the default - DEBUG logs full DB command payloads
+    ENFORCE_HTTPS: bool = True  # Reject HTTP requests in production
+    CORS_ORIGINS: str = "https://app.velar.local"  # Comma-separated list of allowed origins
     # Raised from the original 1 MB (fine when every request was a JSON body)
     # to accommodate multipart PDF statement uploads - see POST /statements/upload -
     # and, since routers/app_updates.py, Android release APK uploads (also
@@ -44,8 +46,20 @@ class Settings(BaseSettings):
     MAX_REQUEST_BODY_BYTES: int = 80_000_000  # 80 MB
     MAX_STATEMENT_PDF_BYTES: int = 10_000_000  # 10 MB
     MAX_APK_UPLOAD_BYTES: int = 80_000_000  # 80 MB - a Flutter release APK is typically 20-50 MB
+    PDF_RETENTION_DAYS: int = 90  # Auto-delete PDFs after 90 days
     MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = 5000
     MONGODB_CONNECT_TIMEOUT_MS: int = 5000
+    MONGODB_REQUIRE_TLS: bool = True
+    MONGODB_VALIDATE_TLS_CERTIFICATE: bool = True
+    # Security: Input validation and request constraints
+    MAX_STRING_FIELD_LENGTH: int = 500
+    MAX_USERNAME_LENGTH: int = 128
+    MAX_PASSWORD_LENGTH: int = 128
+    MIN_PASSWORD_LENGTH: int = 8
+    RATE_LIMIT_LOGIN_ATTEMPTS: str = "5/minute"
+    RATE_LIMIT_API_CALLS: str = "100/minute"
+    ENABLE_REQUEST_VALIDATION: bool = True
+    ENABLE_AUDIT_LOGGING: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

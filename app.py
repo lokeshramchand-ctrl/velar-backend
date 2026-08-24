@@ -11,7 +11,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 # Settings
 from core.config import settings
 from core.error_handlers import register_exception_handlers
-from core.middleware import BodySizeLimitMiddleware, RequestIDMiddleware, SecurityHeadersMiddleware
+from core.middleware import BodySizeLimitMiddleware, HTTPSEnforcementMiddleware, RequestIDMiddleware, SecurityHeadersMiddleware
 from core.ollama_client import get_ollama_host
 from core.rate_limiter import setup_rate_limiting
 from core.security import validate_admin_key, validate_api_key
@@ -77,6 +77,8 @@ setup_rate_limiting(app)
 # Defensive middleware. Added in this order so that, relative to the ASGI
 # stack (last-added = outermost), RequestIDMiddleware wraps everything else -
 # even a request rejected by the body-size limiter gets a correlation id back.
+if settings.ENFORCE_HTTPS and settings.ENVIRONMENT == "production":
+    app.add_middleware(HTTPSEnforcementMiddleware, enabled_for_environment=settings.ENVIRONMENT)
 app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.MAX_REQUEST_BODY_BYTES)
 app.add_middleware(RequestIDMiddleware)
