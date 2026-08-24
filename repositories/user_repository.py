@@ -57,4 +57,30 @@ class UserRepository:
         doc["_id"] = str(doc["_id"])
         return User(**doc)
 
+    async def update_user(self, user_id: str, updates: dict) -> User | None:
+        """Update user with arbitrary fields. Always updates updated_at timestamp."""
+        updates["updated_at"] = datetime.now(UTC)
+        try:
+            oid = ObjectId(user_id)
+        except (InvalidId, TypeError):
+            return None
+        doc = await db.users.find_one_and_update(
+            {"_id": oid},
+            {"$set": updates},
+            return_document=ReturnDocument.AFTER,
+        )
+        if not doc:
+            return None
+        doc["_id"] = str(doc["_id"])
+        return User(**doc)
+
+    async def get_all(self, limit: int = 1000) -> list[User]:
+        """Retrieve all users. Use with pagination in production."""
+        docs = await db.users.find().limit(limit).to_list(None)
+        users = []
+        for doc in docs:
+            doc["_id"] = str(doc["_id"])
+            users.append(User(**doc))
+        return users
+
 user_repo = UserRepository()

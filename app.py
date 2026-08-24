@@ -23,7 +23,7 @@ from feedback.api_router import router as feedback_router
 from milvus.insert_vectors import vector_store
 
 # Routers
-from routers import analytics, app_updates, auth, devices, jobs, memory, pipelines, rag, statements, users, v1
+from routers import admin, analytics, app_updates, auth, devices, jobs, memory, pipelines, rag, statements, users, v1
 from routers.observability import router as observability_router
 
 # Logging
@@ -121,6 +121,10 @@ app.include_router(jobs.router, dependencies=[Depends(validate_api_key)])
 # of per-router because most of this router's endpoints are meant to be
 # reachable by the app itself, unlike pipelines.router's.
 app.include_router(app_updates.router, dependencies=[Depends(validate_api_key)])
+
+# Admin API - stricter rate limits, requires ADMIN_API_KEY + admin scope
+# In production, can be deployed on a separate internal port/network (see docker-compose.yml)
+app.include_router(admin.router, dependencies=[Depends(validate_api_key)])
 
 
 # --- Health / Liveness / Readiness ---
