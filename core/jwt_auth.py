@@ -24,8 +24,13 @@ bearer_scheme = HTTPBearer(
 ACCESS_TOKEN_TYPE = "access"  # noqa: S105 - a JWT "type" claim value, not a credential
 
 
-def create_access_token(user_id: str) -> tuple[str, int]:
-    """Returns (token, expires_in_seconds)."""
+def create_access_token(user_id: str, scopes: list[str] | None = None) -> tuple[str, int]:
+    """Returns (token, expires_in_seconds).
+
+    Args:
+        user_id: The subject (user ID) for the token
+        scopes: Optional list of authorization scopes (e.g., ["statements:read", "admin"])
+    """
     now = datetime.now(UTC)
     lifetime = timedelta(minutes=settings.JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
     payload = {
@@ -35,6 +40,8 @@ def create_access_token(user_id: str) -> tuple[str, int]:
         "exp": now + lifetime,
         "jti": secrets.token_hex(16),
     }
+    if scopes:
+        payload["scopes"] = scopes
     token = jwt.encode(payload, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
     return token, int(lifetime.total_seconds())
 
@@ -83,11 +90,14 @@ def decode_access_token(token: str) -> dict:
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
-) -> User:
+) -> dict:
     """The JWT half of this app's two-layer auth (see core/security.py for
     the API-key half). Bind this via `Depends(get_current_user)` on a
     handler parameter - not `dependencies=[...]` - wherever the resolved
-    identity is actually needed, e.g. to scope a query by user id."""
+    identity is actually needed, e.g. to scope a query by user id.
+
+    Returns the decoded JWT payload dict with 'sub', 'scopes', 'jti', etc.
+    """
     if credentials is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -112,4 +122,38 @@ async def get_current_user(
         # 401-vs-403 convention in core/security.py.
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
 
-    return user
+    return payload
+
+
+def require_scope(required_scopes: str | list[str]):
+    """FastAPI dependency factory that checks for required authorization scopes.
+
+    Usage:
+        @router.get("/admin/users")
+        async def admin_endpoint(payload = Depends(require_scope("admin"))):
+            ...
+
+    Args:
+        required_scopes: Single scope or list of scopes (at least one must be present)
+
+    Returns:
+        FastAPI dependency function
+    """
+    if isinstance(required_scopes, str):
+        required_scopes = [required_scopes]
+
+    async def check_scopes(
+        payload = Depends(get_current_user),
+    ) -> dict:
+        token_scopes = payload.get("scopes", [])
+
+        # Check if any required scope is present
+        if not any(scope in token_scopes for scope in required_scopes):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Required scope not present. Need one of: {', '.join(required_scopes)}"
+            )
+
+        return payload
+
+    return check_scopes
