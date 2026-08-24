@@ -39,14 +39,14 @@ def create_access_token(user_id: str) -> tuple[str, int]:
     return token, int(lifetime.total_seconds())
 
 
-def generate_refresh_token() -> tuple[str, datetime]:
-    """Opaque, high-entropy token - deliberately NOT a JWT. A self-contained
-    JWT refresh token can't be individually revoked before its own expiry
-    without maintaining a separate blocklist anyway, so there's no benefit
-    over an opaque token that's already stored (hashed) server-side for
-    lookup - see repositories/refresh_token_repository.py. Returns
+def generate_refresh_token(device_id: str | None = None) -> tuple[str, datetime]:
+    """Opaque, high-entropy token with optional device tracking. Returns
     (raw_token, expires_at); only the raw token is ever returned to the
-    client, never persisted in plaintext."""
+    client, never persisted in plaintext.
+
+    Args:
+        device_id: Optional device identifier for per-device authorization
+    """
     raw_token = secrets.token_urlsafe(48)
     expires_at = datetime.now(UTC) + timedelta(days=settings.JWT_REFRESH_TOKEN_EXPIRE_DAYS)
     return raw_token, expires_at
