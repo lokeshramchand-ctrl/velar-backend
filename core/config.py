@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     APPLE_BUNDLE_ID: str | None = None  # iOS app bundle ID
     APPLE_KEY_ID: str | None = None  # Apple DeviceCheck key ID
     APPLE_PRIVATE_KEY: str | None = None  # Apple DeviceCheck private key (PEM)
+    # Request signing & replay protection (Tier 2 security)
+    REQUEST_SIGNING_REQUIRED: bool = False  # Require HMAC signatures on sensitive endpoints
+    REQUEST_SIGNATURE_MAX_AGE_SECONDS: int = 60  # Maximum age of request timestamp
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
