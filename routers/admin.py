@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from core.jwt_auth import get_current_user, require_scope
 from core.rate_limiter import limiter
@@ -27,6 +27,7 @@ async def admin_health():
 @router.get("/users", status_code=status.HTTP_200_OK)
 @limiter.limit("5/minute")
 async def list_all_users(
+    request: Request,
     payload = Depends(require_scope("admin")),
     current_user = Depends(get_current_user)
 ):
@@ -53,6 +54,7 @@ async def list_all_users(
 @router.get("/users/{user_id}", status_code=status.HTTP_200_OK)
 @limiter.limit("10/minute")
 async def get_user_details(
+    request: Request,
     user_id: str,
     payload = Depends(require_scope("admin")),
     current_user = Depends(get_current_user)
@@ -93,6 +95,7 @@ async def get_user_details(
 @router.patch("/users/{user_id}/active", status_code=status.HTTP_200_OK)
 @limiter.limit("5/minute")
 async def toggle_user_active(
+    request: Request,
     user_id: str,
     active: bool,
     payload = Depends(require_scope("admin")),
@@ -122,6 +125,7 @@ async def toggle_user_active(
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 @limiter.limit("5/minute")
 async def delete_user(
+    request: Request,
     user_id: str,
     payload = Depends(require_scope("admin")),
     current_user = Depends(get_current_user)
@@ -150,6 +154,7 @@ async def delete_user(
 @router.post("/retention/cleanup", status_code=status.HTTP_200_OK)
 @limiter.limit("2/minute")
 async def trigger_retention_cleanup(
+    request: Request,
     payload = Depends(require_scope("admin")),
     current_user = Depends(get_current_user)
 ):
