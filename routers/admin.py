@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from core.jwt_auth import get_current_user, require_scope
 from core.rate_limiter import limiter
+from core.retention_manager import retention_manager
 from core.security import validate_admin_key
 
 logger = logging.getLogger(__name__)
@@ -144,3 +145,36 @@ async def delete_user(
     await user_repo.update_user(user_id, {"is_active": False})
 
     logger.info(f"Admin {current_user['sub']} deleted user {user_id}")
+
+
+@router.post("/retention/cleanup", status_code=status.HTTP_200_OK)
+@limiter.limit("2/minute")
+async def trigger_retention_cleanup(
+    payload = Depends(require_scope("admin")),
+    current_user = Depends(get_current_user)
+):
+    """Trigger immediate data retention and cleanup cycle. Requires admin scope.
+
+    Cleans up:
+    - PDFs older than PDF_RETENTION_DAYS (default: 90 days)
+    - Audit logs older than 90 days
+    - Expired request nonces
+    - Revoked refresh tokens older than 7 days
+
+    Note: MongoDB TTL indexes handle automatic cleanup automatically, but this
+    endpoint is available for manual/immediate triggering if needed.
+    """
+    try:
+        results = await retention_manager.run_full_retention_cleanup()
+        logger.info(f"Admin {current_user['sub']} triggered retention cleanup. Results: {results}")
+        return {
+            "status": "success",
+            "message": "Retention cleanup completed",
+            "results": results
+        }
+    except Exception as e:
+        logger.error(f"Error during admin retention cleanup: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Retention cleanup failed: {str(e)}"
+        )
