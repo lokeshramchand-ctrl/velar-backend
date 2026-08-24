@@ -5,6 +5,8 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException, Request, status
 from pymongo.errors import DuplicateKeyError
 
+from core.config import settings
+from core.device_attestation import device_attestation_verifier
 from core.jwt_auth import create_access_token, generate_refresh_token
 from core.rate_limiter import limiter
 from core.security import hash_password, verify_password
@@ -87,6 +89,32 @@ async def login(request: Request, payload: LoginRequest):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
 
+    # Verify device attestation if provided/required
+    attestation_result = None
+    if payload.attestation_token and payload.attestation_type:
+        if payload.attestation_type == "play_integrity":
+            attestation_result = await device_attestation_verifier.verify_play_integrity(
+                payload.attestation_token,
+                payload.attestation_nonce or ""
+            )
+        elif payload.attestation_type == "app_attest":
+            attestation_result = await device_attestation_verifier.verify_app_attest(
+                payload.attestation_token,
+                payload.attestation_nonce or ""
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown attestation type: {payload.attestation_type}"
+            )
+
+        if not attestation_result.is_valid and settings.DEVICE_ATTESTATION_REQUIRED:
+            logger.warning(f"Device attestation failed: {attestation_result.error}")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Device attestation failed"
+            )
+
     # Track device on login if provided
     from models.schemas import DeviceSession
     if payload.device_id:
@@ -105,6 +133,14 @@ async def login(request: Request, payload: LoginRequest):
                 last_login=datetime.now(UTC),
             )
             user.devices.append(device)
+
+        # Store attestation result if verification completed
+        if attestation_result:
+            device.attestation_verified = attestation_result.is_valid
+            device.attestation_type = attestation_result.attestation_type
+            if attestation_result.is_valid:
+                device.attestation_at = attestation_result.timestamp
+
         await user_repo.update_user(user.id, {"devices": [d.model_dump() for d in user.devices]})
 
     return await _issue_token_pair(

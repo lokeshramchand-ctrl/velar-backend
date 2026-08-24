@@ -60,6 +60,13 @@ class Settings(BaseSettings):
     RATE_LIMIT_API_CALLS: str = "100/minute"
     ENABLE_REQUEST_VALIDATION: bool = True
     ENABLE_AUDIT_LOGGING: bool = True
+    # Device attestation (Tier 2 security)
+    DEVICE_ATTESTATION_REQUIRED: bool = False  # Require Play Integrity / App Attest on login
+    GOOGLE_PLAY_INTEGRITY_API_KEY: str | None = None  # Google Play Services API key
+    APPLE_TEAM_ID: str | None = None  # Apple Developer Team ID
+    APPLE_BUNDLE_ID: str | None = None  # iOS app bundle ID
+    APPLE_KEY_ID: str | None = None  # Apple DeviceCheck key ID
+    APPLE_PRIVATE_KEY: str | None = None  # Apple DeviceCheck private key (PEM)
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
