@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     PDF_RETENTION_DAYS: int = 90  # Auto-delete PDFs after 90 days
     MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = 5000
     MONGODB_CONNECT_TIMEOUT_MS: int = 5000
+    MONGODB_REQUIRE_TLS: bool = True
+    MONGODB_VALIDATE_TLS_CERTIFICATE: bool = True
     # Security: Input validation and request constraints
     MAX_STRING_FIELD_LENGTH: int = 500
     MAX_USERNAME_LENGTH: int = 128

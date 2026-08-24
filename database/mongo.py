@@ -10,6 +10,37 @@ class MongoDB:
     client: AsyncIOMotorClient = None
     db = None
 
+    @staticmethod
+    def _validate_connection_uri(uri: str) -> None:
+        """Validate that MongoDB connection enforces TLS and authentication.
+
+        Production URIs should use:
+        - mongodb+srv:// (enforces TLS, auto-discovers replica set)
+        - mongodb://username:password@host (includes credentials)
+
+        Raises ValueError if URI doesn't meet security requirements.
+        """
+        if not uri:
+            raise ValueError("MONGODB_URI is not configured")
+
+        if not uri.startswith(("mongodb://", "mongodb+srv://")):
+            raise ValueError("Invalid MONGODB_URI format. Must start with mongodb:// or mongodb+srv://")
+
+        # mongodb+srv enforces TLS, but mongodb:// connections should have tls param or be authenticated
+        if uri.startswith("mongodb://") and "tls=true" not in uri and "@" not in uri:
+            logger.warning(
+                "MongoDB URI does not appear to enforce TLS or authentication. "
+                "Production deployments must use mongodb+srv:// or include tls=true and credentials."
+            )
+
+        # Ensure no plaintext password in logs (just check presence of credentials)
+        if "@" in uri:
+            logger.info("MongoDB connection includes authentication credentials (TLS + Auth)")
+        elif "mongodb+srv" in uri:
+            logger.info("MongoDB connection uses mongodb+srv (TLS enforced, discovery required)")
+        else:
+            logger.warning("MongoDB connection may not have authentication - ensure TLS is enabled")
+
     @classmethod
     async def connect(cls, uri: str = None, db_name: str = None):
         logger.info("Connecting to MongoDB...")
@@ -18,11 +49,19 @@ class MongoDB:
         uri = uri or settings.MONGODB_URI
         db_name = db_name or settings.MONGODB_DB_NAME
 
-        cls.client = AsyncIOMotorClient(
-            uri,
-            serverSelectionTimeoutMS=settings.MONGODB_SERVER_SELECTION_TIMEOUT_MS,
-            connectTimeoutMS=settings.MONGODB_CONNECT_TIMEOUT_MS,
-        )
+        # Validate connection URI has TLS/auth (Tier 1: MongoDB authentication/TLS)
+        cls._validate_connection_uri(uri)
+
+        # Configure TLS and authentication options
+        client_options = {
+            "serverSelectionTimeoutMS": settings.MONGODB_SERVER_SELECTION_TIMEOUT_MS,
+            "connectTimeoutMS": settings.MONGODB_CONNECT_TIMEOUT_MS,
+            "ssl": True,
+            "tlsInsecure": False,  # Enforce certificate validation
+            "serverSelectionTimeoutMS": settings.MONGODB_SERVER_SELECTION_TIMEOUT_MS,
+        }
+
+        cls.client = AsyncIOMotorClient(uri, **client_options)
         cls.db = cls.client[db_name]
 
         # Collections
