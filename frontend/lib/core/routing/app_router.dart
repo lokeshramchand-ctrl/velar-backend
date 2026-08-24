@@ -1,14 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-
 import '../../features/activity/presentation/activity_screen.dart';
 import '../../features/analytics/presentation/spending_patterns_screen.dart';
 import '../../features/auth/presentation/auth_controller.dart';
 import '../../features/auth/presentation/auth_state.dart';
 import '../../features/auth/presentation/login_screen.dart';
 import '../../features/auth/presentation/register_screen.dart';
-import '../../features/auth/presentation/splash_screen.dart';
 import '../../features/legal/presentation/privacy_policy_screen.dart';
 import '../../features/legal/presentation/terms_of_service_screen.dart';
 import '../../features/onboarding/presentation/onboarding_screen.dart';
@@ -35,16 +33,15 @@ final appRouterProvider = Provider<GoRouter>((ref) {
   ref.onDispose(refreshNotifier.dispose);
 
   return GoRouter(
-    initialLocation: '/splash',
+    initialLocation: '/login',
     refreshListenable: refreshNotifier,
     redirect: (context, state) {
       final loc = state.matchedLocation;
       final onAuthPages = loc == '/login' || loc == '/register';
-      final onSplash = loc == '/splash';
 
       final authAsync = ref.read(authControllerProvider);
       if (authAsync.isLoading && !authAsync.hasValue) {
-        return onSplash ? null : '/splash';
+        return onAuthPages ? null : '/login';
       }
 
       final authState = authAsync.valueOrNull;
@@ -55,11 +52,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       // Authenticated from here on.
       final periodsAsync = ref.read(periodsProvider);
       if (periodsAsync.isLoading && !periodsAsync.hasValue) {
-        return (onSplash || onAuthPages) ? null : '/splash';
+        return onAuthPages ? null : null;
       }
       final hasPeriods = (periodsAsync.valueOrNull ?? const []).isNotEmpty;
 
-      if (onSplash || onAuthPages) {
+      if (onAuthPages) {
         return hasPeriods ? '/shell/overview' : '/onboarding';
       }
       if (loc == '/onboarding' && hasPeriods) return '/shell/overview';
@@ -67,7 +64,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(path: '/splash', builder: (context, state) => const SplashScreen()),
       GoRoute(path: '/login', builder: (context, state) => const LoginScreen()),
       GoRoute(path: '/register', builder: (context, state) => const RegisterScreen()),
       GoRoute(path: '/onboarding', builder: (context, state) => const OnboardingScreen()),
