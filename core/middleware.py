@@ -1,8 +1,11 @@
 import uuid
+import logging
 from contextvars import ContextVar
 
 from fastapi import HTTPException
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 # Bound per-request so log records can include the request id without threading
 # it through every function signature.
@@ -45,12 +48,17 @@ class RequestIDMiddleware:
 
 class SecurityHeadersMiddleware:
     """
-    Adds baseline defensive response headers. This is a headless JSON API with
-    no HTML rendering and no browser-facing frontend, so a full CSP/HSTS policy
-    belongs at the TLS-terminating reverse proxy/load balancer in front of this
-    service (documented in docs/14-deployment-operations.md), not here. The
-    headers below are cheap, always-correct defaults regardless of what sits in
-    front of this process.
+    Adds defensive response headers for API security. Includes:
+    - X-Content-Type-Options: nosniff (prevent MIME sniffing)
+    - X-Frame-Options: DENY (prevent clickjacking)
+    - Referrer-Policy: no-referrer (privacy)
+    - Permissions-Policy: restrict dangerous APIs
+    - Cross-Origin-Resource-Policy: same-origin (CORP)
+    - Strict-Transport-Security: HSTS for HTTPS enforcement
+    - X-XSS-Protection: deprecated but included for defense-in-depth
+    - Cache-Control: no-store for sensitive responses
+
+    Additional HSTS/CSP at TLS-terminating proxy level is recommended.
     """
 
     def __init__(self, app):
@@ -67,9 +75,12 @@ class SecurityHeadersMiddleware:
                 headers.extend([
                     (b"x-content-type-options", b"nosniff"),
                     (b"x-frame-options", b"DENY"),
+                    (b"x-xss-protection", b"1; mode=block"),
                     (b"referrer-policy", b"no-referrer"),
-                    (b"permissions-policy", b"geolocation=(), microphone=(), camera=()"),
+                    (b"permissions-policy", b"geolocation=(), microphone=(), camera=(), payment=()"),
                     (b"cross-origin-resource-policy", b"same-origin"),
+                    (b"strict-transport-security", b"max-age=31536000; includeSubDomains; preload"),
+                    (b"cache-control", b"no-store, no-cache, must-revalidate, private"),
                 ])
             await send(message)
 
@@ -122,3 +133,47 @@ class BodySizeLimitMiddleware:
             return message
 
         await self.app(scope, limited_receive, send)
+
+
+class HTTPSEnforcementMiddleware:
+    """
+    Enforces HTTPS in production environments by:
+    1. Rejecting non-HTTPS requests (except health checks and metrics)
+    2. Verifying X-Forwarded-Proto header on reverse-proxy setups
+    3. Allowing HTTP for local development (localhost/127.0.0.1)
+    """
+
+    def __init__(self, app, enabled_for_environment: str = "production"):
+        self.app = app
+        self.enabled_for_environment = enabled_for_environment
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        headers = dict(scope.get("headers") or [])
+        scheme = scope.get("scheme", "http")
+        client = scope.get("client", ("unknown", 0))
+        client_host = client[0] if client else "unknown"
+
+        path = scope.get("path", "")
+        is_health_check = path in ["/live", "/ready", "/health", "/metrics"]
+
+        x_forwarded_proto = headers.get(b"x-forwarded-proto", b"").decode().lower()
+        is_https = scheme == "https" or x_forwarded_proto == "https"
+        is_localhost = client_host in ["127.0.0.1", "localhost", "::1"]
+
+        if not is_https and not is_localhost and not is_health_check:
+            logger.warning(f"HTTPS enforcement: rejecting {scheme.upper()} request to {path} from {client_host}")
+            response = JSONResponse(
+                status_code=400,
+                content={
+                    "error": "https_required",
+                    "detail": "This API requires HTTPS. Use https:// instead of http://",
+                },
+            )
+            await response(scope, receive, send)
+            return
+
+        await self.app(scope, receive, send)

@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # Operational settings (all have safe production-appropriate defaults)
     ENVIRONMENT: str = "production"  # "production" | "development"
     LOG_LEVEL: str = "INFO"  # DEBUG is opt-in, never the default - DEBUG logs full DB command payloads
+    ENFORCE_HTTPS: bool = True  # Reject HTTP requests in production
+    CORS_ORIGINS: str = "https://app.velar.local"  # Comma-separated list of allowed origins
     # Raised from the original 1 MB (fine when every request was a JSON body)
     # to accommodate multipart PDF statement uploads - see POST /statements/upload -
     # and, since routers/app_updates.py, Android release APK uploads (also
