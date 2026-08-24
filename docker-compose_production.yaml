@@ -29,6 +29,14 @@ services:
     restart: always
     networks:
       - coolify
+    # Read-only root filesystem with tmpfs mounts for writable paths
+    # (FastAPI, Python logging, and temporary files). This prevents any
+    # compromise from persisting or writing to arbitrary locations on disk.
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /var/tmp
+      - /run
     # Defense in depth for a process that's already running as a non-root
     # user (see Dockerfile): even if the app or a dependency were compromised,
     # it can't escalate privileges or exercise Linux capabilities it has no
