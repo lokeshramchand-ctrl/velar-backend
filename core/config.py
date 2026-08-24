@@ -47,6 +47,15 @@ class Settings(BaseSettings):
     PDF_RETENTION_DAYS: int = 90  # Auto-delete PDFs after 90 days
     MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = 5000
     MONGODB_CONNECT_TIMEOUT_MS: int = 5000
+    # Security: Input validation and request constraints
+    MAX_STRING_FIELD_LENGTH: int = 500
+    MAX_USERNAME_LENGTH: int = 128
+    MAX_PASSWORD_LENGTH: int = 128
+    MIN_PASSWORD_LENGTH: int = 8
+    RATE_LIMIT_LOGIN_ATTEMPTS: str = "5/minute"
+    RATE_LIMIT_API_CALLS: str = "100/minute"
+    ENABLE_REQUEST_VALIDATION: bool = True
+    ENABLE_AUDIT_LOGGING: bool = True
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
