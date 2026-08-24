@@ -56,10 +56,10 @@ class MongoDB:
         client_options = {
             "serverSelectionTimeoutMS": settings.MONGODB_SERVER_SELECTION_TIMEOUT_MS,
             "connectTimeoutMS": settings.MONGODB_CONNECT_TIMEOUT_MS,
-            "ssl": True,
-            "tlsInsecure": False,  # Enforce certificate validation
-            "serverSelectionTimeoutMS": settings.MONGODB_SERVER_SELECTION_TIMEOUT_MS,
         }
+        if settings.MONGODB_REQUIRE_TLS:
+            client_options["tls"] = True
+            client_options["tlsInsecure"] = not settings.MONGODB_VALIDATE_TLS_CERTIFICATE
 
         cls.client = AsyncIOMotorClient(uri, **client_options)
         cls.db = cls.client[db_name]
