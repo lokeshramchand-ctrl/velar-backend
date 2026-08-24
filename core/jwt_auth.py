@@ -3,7 +3,7 @@ import secrets
 from datetime import UTC, datetime, timedelta
 
 import jwt
-from fastapi import HTTPException, Security, status
+from fastapi import Depends, HTTPException, Security, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core.config import settings
