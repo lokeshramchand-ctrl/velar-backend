@@ -25,13 +25,23 @@ def _hash_refresh_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.encode()).hexdigest()
 
 
-async def _issue_token_pair(user_id: str) -> TokenResponse:
+async def _issue_token_pair(
+    user_id: str,
+    device_id: str | None = None,
+    device_name: str | None = None,
+    user_agent: str | None = None,
+    ip_address: str | None = None,
+) -> TokenResponse:
     access_token, expires_in = create_access_token(user_id)
     refresh_token, refresh_expires_at = generate_refresh_token()
     await refresh_token_repo.store(
         user_id=user_id,
         token_hash=_hash_refresh_token(refresh_token),
         expires_at=refresh_expires_at,
+        device_id=device_id,
+        device_name=device_name or "Unknown Device",
+        user_agent=user_agent,
+        ip_address=ip_address,
     )
     return TokenResponse(access_token=access_token, refresh_token=refresh_token, expires_in=expires_in)
 
@@ -77,7 +87,33 @@ async def login(request: Request, payload: LoginRequest):
     if not user.is_active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled")
 
-    return await _issue_token_pair(user.id)
+    # Track device on login if provided
+    from models.schemas import DeviceSession
+    if payload.device_id:
+        # Update or create device session
+        device = next((d for d in user.devices if d.device_id == payload.device_id), None)
+        if device:
+            device.last_login = datetime.now(UTC)
+            device.user_agent = payload.user_agent or device.user_agent
+            device.ip_address = payload.ip_address or device.ip_address
+        else:
+            device = DeviceSession(
+                device_id=payload.device_id,
+                device_name=payload.device_name or "Unknown Device",
+                user_agent=payload.user_agent,
+                ip_address=payload.ip_address,
+                last_login=datetime.now(UTC),
+            )
+            user.devices.append(device)
+        await user_repo.update_user(user.id, {"devices": [d.model_dump() for d in user.devices]})
+
+    return await _issue_token_pair(
+        user.id,
+        device_id=payload.device_id,
+        device_name=payload.device_name or "Unknown Device",
+        user_agent=payload.user_agent,
+        ip_address=payload.ip_address,
+    )
 
 
 @router.post("/refresh", response_model=TokenResponse)

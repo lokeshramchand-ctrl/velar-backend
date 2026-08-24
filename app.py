@@ -23,7 +23,7 @@ from feedback.api_router import router as feedback_router
 from milvus.insert_vectors import vector_store
 
 # Routers
-from routers import analytics, app_updates, auth, jobs, memory, pipelines, rag, statements, users, v1
+from routers import analytics, app_updates, auth, devices, jobs, memory, pipelines, rag, statements, users, v1
 from routers.observability import router as observability_router
 
 # Logging
@@ -102,6 +102,7 @@ Instrumentator().instrument(app).expose(app, endpoint="/metrics")
 # safe gate for them. It gets an additional validate_admin_key dependency
 # on top, gated by a separate operator-only secret (see core/security.py).
 app.include_router(auth.router, dependencies=[Depends(validate_api_key)])
+app.include_router(devices.router, dependencies=[Depends(validate_api_key)])
 app.include_router(users.router, dependencies=[Depends(validate_api_key)])
 app.include_router(v1.router, dependencies=[Depends(validate_api_key)])
 app.include_router(memory.router, dependencies=[Depends(validate_api_key)])
