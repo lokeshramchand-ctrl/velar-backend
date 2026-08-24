@@ -6,6 +6,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from core.config import settings
 from core.jwt_auth import get_current_user
 from core.pagination import PaginationParams, resolve_sort_order, total_pages
+from core.pdf_validation import PDFValidationError, validate_pdf_upload
 from core.rate_limiter import limiter
 from models.schemas import (
     Job,
@@ -92,11 +93,20 @@ async def upload_statement(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="File must be a PDF.")
 
     raw_bytes = await file.read()
-    if len(raw_bytes) > settings.MAX_STATEMENT_PDF_BYTES:
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"PDF exceeds the maximum allowed size of {settings.MAX_STATEMENT_PDF_BYTES} bytes.",
+
+    try:
+        validate_pdf_upload(
+            raw_bytes,
+            content_type=file.content_type,
+            filename=file.filename,
+            max_size=settings.MAX_STATEMENT_PDF_BYTES,
         )
+    except PDFValidationError as e:
+        logger.warning(f"PDF validation failed for user {current_user.id}: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail=f"PDF validation failed: {str(e)}"
+        ) from e
 
     try:
         page_count, pdf_metadata = statement_parser.open_and_inspect(raw_bytes, password)

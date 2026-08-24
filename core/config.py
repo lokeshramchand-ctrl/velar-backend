@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     MAX_REQUEST_BODY_BYTES: int = 80_000_000  # 80 MB
     MAX_STATEMENT_PDF_BYTES: int = 10_000_000  # 10 MB
     MAX_APK_UPLOAD_BYTES: int = 80_000_000  # 80 MB - a Flutter release APK is typically 20-50 MB
+    PDF_RETENTION_DAYS: int = 90  # Auto-delete PDFs after 90 days
     MONGODB_SERVER_SELECTION_TIMEOUT_MS: int = 5000
     MONGODB_CONNECT_TIMEOUT_MS: int = 5000
 
