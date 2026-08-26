@@ -77,6 +77,38 @@ services:
       minio:
         condition: service_healthy
 
+  # ---- Ollama (embeddings + generation) ----
+  # Containerized so `docker compose up` is enough on its own - no separately
+  # managed host install required. Model weights persist in the ollama_data
+  # volume across restarts, but you still need to pull them once (they're
+  # large and licensed per-model, so they're never baked into the image):
+  #   docker compose -f docker-compose_local.yaml exec ollama ollama pull nomic-embed-text
+  #   docker compose -f docker-compose_local.yaml exec ollama ollama pull llama3
+  # (or whatever models you set EMBED_MODEL/LLM_MODEL to in .env)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: always
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    # Uncomment to use an NVIDIA GPU (requires the NVIDIA Container Toolkit
+    # on the host). CPU-only inference works without this, just slower.
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
   velar-backend:
     build:
       context: .
@@ -93,17 +125,12 @@ services:
       - .env
     ports:
       - "9850:8000"
-    # Ollama runs natively on the host (systemd service), not in this
-    # compose stack - GPU/driver passthrough into a container isn't worth
-    # it for a service that already works on the host. host-gateway lets
-    # the container reach it via OLLAMA_URI=http://host.docker.internal:11434
-    # (see .env) on Linux, macOS, and Windows alike.
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       mongodb:
         condition: service_healthy
       milvus:
+        condition: service_healthy
+      ollama:
         condition: service_healthy
     restart: always
     # Temporary filesystem for logs, cache, and temp files (local dev only;
@@ -122,3 +149,4 @@ volumes:
   etcd_data:
   minio_data:
   milvus_data:
+  ollama_data:

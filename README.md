@@ -175,11 +175,10 @@ backend/
 
 ### Prerequisites
 
-- Python **3.12** (the `Dockerfile` is pinned to `python:3.12-slim`)
+- Python **3.12** (the `Dockerfile` is pinned to `python:3.12-slim`) — only needed if you plan to run the backend outside Docker
 - [Docker](https://www.docker.com/) & Docker Compose (recommended path)
-- An [Ollama](https://ollama.com) install on your host, with an embedding model and a generation model pulled (e.g. `ollama pull nomic-embed-text && ollama pull llama3`)
 
-> **Note:** `docker-compose_local.yaml` provisions MongoDB **and** a full Milvus standalone stack (etcd + minio + milvus) — `docker compose -f docker-compose_local.yaml up --build` is enough on its own for those two. Only Ollama is left to run on the host: GPU passthrough into a container isn't worth it for local dev, and the compose file wires `host.docker.internal` so the backend container can reach it.
+> **Note:** `docker-compose_local.yaml` provisions the **entire stack** — MongoDB, a full Milvus standalone deployment (etcd + minio + milvus), Ollama, and the backend itself — as containers on one Docker network. `docker compose -f docker-compose_local.yaml up --build` is enough on its own; nothing needs to be installed on the host beyond Docker. CPU-only Ollama inference works out of the box (slower); uncomment the `deploy.resources` GPU block in the compose file if you have the NVIDIA Container Toolkit set up.
 
 ### Installation
 
@@ -224,21 +223,31 @@ The app **fails fast at startup** if any required variable is missing — this i
 
 ### Running Locally
 
-**Option A — Docker Compose (MongoDB + Milvus + the backend itself; bring your own Ollama on the host):**
+**Option A — Docker Compose (the whole stack: MongoDB, Milvus, Ollama, and the backend):**
 ```bash
 docker compose -f docker-compose_local.yaml up --build
+
+# First run only — pull the models EMBED_MODEL/LLM_MODEL point at (large
+# downloads, done once; weights persist in the ollama_data volume after):
+docker compose -f docker-compose_local.yaml exec ollama ollama pull nomic-embed-text
+docker compose -f docker-compose_local.yaml exec ollama ollama pull llama3
+
+# Optional but recommended — seed canonical merchant data:
+docker compose -f docker-compose_local.yaml exec velar-backend python scripts/seed.py
 ```
 
 **Option B — Manual (infra in Docker, backend on the host):**
 ```bash
 # 1. Start just the infra containers
-docker compose -f docker-compose_local.yaml up mongodb etcd minio milvus
+docker compose -f docker-compose_local.yaml up mongodb etcd minio milvus ollama
+docker compose -f docker-compose_local.yaml exec ollama ollama pull nomic-embed-text
+docker compose -f docker-compose_local.yaml exec ollama ollama pull llama3
 
 # 2. Seed canonical merchant data (optional but recommended)
 python scripts/seed.py
 
-# 3. Start the server — remember to switch MONGODB_URI/MILVUS_URI to the
-#    `localhost` variants in your .env (see comments in .env.example)
+# 3. Start the server — remember to switch MONGODB_URI/MILVUS_URI/OLLAMA_URI
+#    to the `localhost` variants in your .env (see comments in .env.example)
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 
