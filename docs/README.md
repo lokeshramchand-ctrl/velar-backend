@@ -38,6 +38,10 @@ The codebase is organized as a series of **numbered "Phases"** — this isn't a 
 | [21 · Production Hardening & Security Audit](./21-production-hardening-audit.md) | The full pre-production security/reliability/operability audit: every finding, every fix, exact CVEs patched, Docker/CI/CD work, and what's verified vs. still open |
 | [22 · Authentication](./22-authentication.md) | Understand the two-layer API-key + JWT auth model: token lifecycle, password hashing, refresh rotation, per-endpoint protection, and configuration |
 | [23 · Statement Ingestion Pipeline](./23-statements-pipeline.md) | Understand the Google Pay PDF → Transactions → Analytics → AI Insights product surface: the real statement format, async job processing, and how it reuses the existing engines |
+| [Database Security](./DATABASE_SECURITY.md) | Configure MongoDB TLS/auth, encryption at rest, secret management, and backup/disaster recovery |
+| [CI/CD Security Scanning](./CI_SECURITY.md) | Understand what Gitleaks, CodeQL, Semgrep, Trivy, and pip-audit check in `.github/workflows/`, and how to read their output |
+| [Backup & Retention](./BACKUP_AND_RETENTION.md) | Run/restore encrypted MongoDB backups and configure the automated data-retention cleanup job |
+| [Mobile Security Requirements](./MOBILE_SECURITY_REQUIREMENTS.md) | What the Flutter client must implement (cert pinning, biometric lock, device attestation, request signing) to match this backend's security model |
 | [Folder-by-Folder Reference](./folders/README.md) | Get a deep dive on one specific folder — purpose, classes, dependency/call graphs, interview questions, common mistakes, and blast radius if it disappeared |
 | [File-by-File Reference](./files/README.md) | Get a deep dive on one specific file — every import, every function explained in plain English, side effects, performance notes, and interview questions |
 | [Complete API Reference (per-endpoint)](./api/README.md) | Get the full contract for one specific endpoint — headers, validation, exact DB queries, execution flow diagram, examples, and interview questions |
