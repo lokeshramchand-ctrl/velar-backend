@@ -464,4 +464,4 @@ android {
 For implementation questions, refer to:
 - `frontend/lib/core/network/api_client.dart` - HTTP client setup
 - `frontend/lib/core/security/` - Security helpers
-- Backend `docs/SECURITY_TIER2_CHECKLIST.md` - Server-side counterparts
+- Backend [`21-production-hardening-audit.md`](./21-production-hardening-audit.md) and [`22-authentication.md`](./22-authentication.md) - server-side counterparts

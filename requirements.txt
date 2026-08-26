@@ -42,7 +42,11 @@ httpx==0.28.1
 # pypdf: PDF structural validation, decryption (password-protected statements),
 # and best-effort document metadata - pure Python, no native extension beyond
 # what cryptography already pulls in for decryption support.
-pypdf==6.14.2
+# 6.14.2 has two open DoS advisories (GHSA-fp3f-mc75-235c, GHSA-fwg2-594c-jp42
+# - unbounded memory/runtime on crafted /ToUnicode streams and CID font width
+# ranges), relevant here since this parses untrusted user-uploaded PDFs
+# (POST /statements/upload). 6.15.0 is the fix.
+pypdf==6.15.0
 # pdfplumber: text extraction. Its default word x_tolerance (3) collapses
 # inter-word spacing on this statement format entirely (confirmed against a
 # real Google Pay statement - "Paid to Toni and Guy" extracts as

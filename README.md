@@ -175,13 +175,10 @@ backend/
 
 ### Prerequisites
 
-- Python **3.12** (the `Dockerfile` is pinned to `python:3.12-slim`)
+- Python **3.12** (the `Dockerfile` is pinned to `python:3.12-slim`) — only needed if you plan to run the backend outside Docker
 - [Docker](https://www.docker.com/) & Docker Compose (recommended path)
-- A running **MongoDB** instance
-- A running **Milvus** instance ([standalone Docker image](https://milvus.io/docs/install_standalone-docker.md) is sufficient for local dev)
-- A reachable **Ollama** server with an embedding model and a generation model pulled
 
-> **Note:** The committed `docker-compose_local.yaml` only provisions MongoDB — you'll need to run Milvus and Ollama separately (or add them to your own compose override) for the full feature set to work locally.
+> **Note:** `docker-compose_local.yaml` provisions the **entire stack** — MongoDB, a full Milvus standalone deployment (etcd + minio + milvus), Ollama, and the backend itself — as containers on one Docker network. `docker compose -f docker-compose_local.yaml up --build` is enough on its own; nothing needs to be installed on the host beyond Docker. CPU-only Ollama inference works out of the box (slower); uncomment the `deploy.resources` GPU block in the compose file if you have the NVIDIA Container Toolkit set up.
 
 ### Installation
 
@@ -203,54 +200,54 @@ The `torch`/`transformers`/`peft`/`datasets` fine-tuning stack is included but o
 
 ### Environment Variables
 
-Create a `.env` file in the project root:
+Copy the committed template and fill in the blanks:
 
-```env
-# MongoDB
-MONGODB_URI=mongodb://localhost:27017
-MONGODB_DB_NAME=velar
-
-# Milvus
-MILVUS_URI=http://localhost:19530
-
-# Ollama — set ONE of the following
-OLLAMA_URI=http://localhost:11434
-# OLLAMA_HOSTS=http://host1:11434,http://host2:11434   # comma-separated failover list
-
-# Ollama models — replace with whatever models you've pulled in your own Ollama instance
-EMBED_MODEL=nomic-embed-text   # example only
-LLM_MODEL=llama3               # example only
-
-# API authentication
-VELAR_API_KEY=your-secret-key-here
+```bash
+cp .env.example .env
 ```
 
-| Variable | Required | Default | Notes |
-|---|---|---|---|
-| `MONGODB_URI` | Yes | — | Full MongoDB connection string |
-| `MONGODB_DB_NAME` | No | `velar` | |
-| `MILVUS_URI` | Yes | — | |
-| `OLLAMA_URI` | No | — | Takes precedence over `OLLAMA_HOSTS` if both are set |
-| `OLLAMA_HOSTS` | No | — | Comma-separated failover list, tried in order at startup |
-| `EMBED_MODEL` | Yes | — | Ollama embedding model name |
-| `LLM_MODEL` | Yes | — | Ollama generation model name |
-| `VELAR_API_KEY` | Yes | — | Enforced on every non-public route via `X-Velar-API-Key` |
+[`.env.example`](./.env.example) documents every setting `core/config.py` reads, with local-dev-appropriate defaults already filled in (Docker service hostnames, TLS disabled for the local Mongo container, `ENFORCE_HTTPS=false`, etc.) and the handful you must still replace yourself (`VELAR_API_KEY`, `JWT_SECRET_KEY`, `EMBED_MODEL`/`LLM_MODEL`) called out inline. The subset that's actually required — no default, app refuses to start without it — is:
+
+| Variable | Notes |
+|---|---|
+| `MONGODB_URI` | Full MongoDB connection string |
+| `MILVUS_URI` | |
+| `EMBED_MODEL` | Ollama embedding model name — must be pulled in your local Ollama already |
+| `LLM_MODEL` | Ollama generation model name — must be pulled in your local Ollama already |
+| `VELAR_API_KEY` | Enforced on every non-public route via `X-Velar-API-Key`; any non-empty string works locally |
+| `JWT_SECRET_KEY` | Must be ≥ 32 chars — generate with `openssl rand -hex 32` |
+
+Everything else in `.env.example` (rate limits, upload size caps, device attestation, request signing, …) has a safe default and can be left as-is for local development.
 
 The app **fails fast at startup** if any required variable is missing — this is deliberate, not a bug.
 
 ### Running Locally
 
-**Option A — Docker Compose (MongoDB only; bring your own Milvus/Ollama):**
+**Option A — Docker Compose (the whole stack: MongoDB, Milvus, Ollama, and the backend):**
 ```bash
 docker compose -f docker-compose_local.yaml up --build
+
+# First run only — pull the models EMBED_MODEL/LLM_MODEL point at (large
+# downloads, done once; weights persist in the ollama_data volume after):
+docker compose -f docker-compose_local.yaml exec ollama ollama pull nomic-embed-text
+docker compose -f docker-compose_local.yaml exec ollama ollama pull llama3
+
+# Optional but recommended — seed canonical merchant data:
+docker compose -f docker-compose_local.yaml exec velar-backend python scripts/seed.py
 ```
 
-**Option B — Manual:**
+**Option B — Manual (infra in Docker, backend on the host):**
 ```bash
-# 1. Seed canonical merchant data (optional but recommended)
+# 1. Start just the infra containers
+docker compose -f docker-compose_local.yaml up mongodb etcd minio milvus ollama
+docker compose -f docker-compose_local.yaml exec ollama ollama pull nomic-embed-text
+docker compose -f docker-compose_local.yaml exec ollama ollama pull llama3
+
+# 2. Seed canonical merchant data (optional but recommended)
 python scripts/seed.py
 
-# 2. Start the server
+# 3. Start the server — remember to switch MONGODB_URI/MILVUS_URI/OLLAMA_URI
+#    to the `localhost` variants in your .env (see comments in .env.example)
 uvicorn app:app --reload --host 0.0.0.0 --port 8000
 ```
 

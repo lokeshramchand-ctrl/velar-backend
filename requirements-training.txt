@@ -10,11 +10,20 @@
 #   pip install -r requirements.txt -r requirements-training.txt
 
 pandas==2.2.3
-lightgbm==4.5.0
+# 4.5.0 has a known deserialization RCE (GHSA-2586-f3p4-hq84, PYSEC-2024-231)
+# when loading an untrusted model file - fixed in 4.6.0.
+lightgbm==4.6.0
 xgboost==2.1.3
 shap==0.46.0
 tabulate==0.9.0
 
+# torch/transformers/datasets each carry a long tail of open advisories at
+# these pins (mostly unsafe-deserialization-on-untrusted-input classes, per
+# osv.dev) that were not re-audited here - bumping any of them needs an
+# actual run of training/finetune.py against the new versions first (see the
+# TrainingArguments eval_strategy rename in docs/16-known-issues-tech-debt.md
+# for an example of exactly this kind of breakage), not just a pin change.
+# None of this ships to the production image (see header comment above).
 torch==2.5.1
 transformers==4.47.1
 peft==0.14.0
